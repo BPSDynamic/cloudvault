@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 15% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    --primary: 215 85% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 215 85% 45%;
+
+    --secondary: 215 20% 96%;
+    --secondary-foreground: 215 25% 15%;
+
+    --muted: 215 15% 95%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 215 85% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 15% 90%;
+    --input: 215 15% 94%;
+    --input-border: 215 20% 85%;
+    --ring: 215 85% 50%;
+
+    /* Auth specific colors */
+    --auth-gradient-from: 215 85% 50%;
+    --auth-gradient-to: 240 85% 60%;
+    --auth-bg: 210 15% 98%;
+    --auth-card: 0 0% 100%;
+    --auth-shadow: 215 25% 15%;
+
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 215 25% 8%;
+    --foreground: 215 15% 95%;
+
+    --card: 215 25% 10%;
+    --card-foreground: 215 15% 95%;
+
+    --popover: 215 25% 10%;
+    --popover-foreground: 215 15% 95%;
+
+    --primary: 215 85% 55%;
+    --primary-foreground: 215 25% 8%;
+    --primary-hover: 215 85% 60%;
+
+    --secondary: 215 15% 15%;
+    --secondary-foreground: 215 15% 95%;
+
+    --muted: 215 15% 12%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 215 85% 55%;
+    --accent-foreground: 215 25% 8%;
+
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 215 15% 95%;
+
+    --border: 215 15% 20%;
+    --input: 215 15% 12%;
+    --input-border: 215 15% 25%;
+    --ring: 215 85% 55%;
+
+    /* Auth specific colors for dark mode */
+    --auth-gradient-from: 215 85% 55%;
+    --auth-gradient-to: 240 85% 65%;
+    --auth-bg: 215 25% 8%;
+    --auth-card: 215 25% 10%;
+    --auth-shadow: 0 0% 0%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
