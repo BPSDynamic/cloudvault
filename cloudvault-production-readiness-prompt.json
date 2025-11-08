@@ -1,0 +1,904 @@
+{
+  "prompt_metadata": {
+    "title": "CloudVault Production Readiness Implementation",
+    "version": "1.0.0",
+    "created": "2025-11-08",
+    "priority": "critical",
+    "estimated_effort": "3-4 weeks with 2 developers"
+  },
+  "project_context": {
+    "name": "CloudVault",
+    "description": "Enterprise-grade cloud storage solution built on AWS Amplify Gen 2",
+    "tech_stack": {
+      "frontend": ["React", "TypeScript", "Vite", "Tailwind CSS"],
+      "backend": ["AWS Lambda", "Node.js", "TypeScript"],
+      "infrastructure": ["AWS Amplify Gen 2", "S3", "DynamoDB", "Cognito"],
+      "current_state": "45% production ready"
+    },
+    "repository_structure": {
+      "amplify_functions": [
+        "analyticsService",
+        "backupService",
+        "fileProcessor",
+        "fileService",
+        "folderService",
+        "notificationService"
+      ],
+      "frontend_services": [
+        "authService.ts",
+        "s3Service.ts",
+        "dynamoService.ts",
+        "lambdaService.ts"
+      ],
+      "documentation": [
+        "README.md",
+        "docs/architecture.md",
+        ".kiro/specs/cloudvault-comprehensive/requirements.md",
+        ".kiro/specs/backend-infrastructure/requirements.md"
+      ]
+    }
+  },
+  "critical_blockers": {
+    "phase_1_infrastructure": {
+      "priority": "CRITICAL",
+      "timeline": "Week 1-2",
+      "tasks": [
+        {
+          "task_id": "CB-001",
+          "title": "Configure API Gateway for All Lambda Functions",
+          "status": "0% implemented",
+          "description": "Lambda functions exist but have NO HTTP endpoints. Frontend cannot communicate with backend.",
+          "requirements": [
+            "Create AWS API Gateway REST API or HTTP API",
+            "Configure routes for all 6 Lambda functions:",
+            "  - /api/analytics/* (analyticsService)",
+            "  - /api/backups/* (backupService)",
+            "  - /api/files/* (fileService)",
+            "  - /api/folders/* (folderService)",
+            "  - /api/notifications/* (notificationService)",
+            "  - /api/process/* (fileProcessor)",
+            "Set up CORS configuration for frontend origin",
+            "Configure authentication using Cognito authorizer",
+            "Add request validation and throttling",
+            "Implement response transformations"
+          ],
+          "implementation_steps": [
+            "1. Update amplify/backend.ts to include API Gateway configuration",
+            "2. Create amplify/api/resource.ts with defineFunction imports",
+            "3. Map each Lambda to appropriate HTTP methods (GET, POST, PUT, DELETE)",
+            "4. Configure IAM roles for API Gateway to invoke Lambdas",
+            "5. Update frontend lambdaService.ts to use API Gateway URLs instead of direct Lambda invocation",
+            "6. Test each endpoint with Postman/curl before frontend integration",
+            "7. Update environment variables with API Gateway endpoint"
+          ],
+          "acceptance_criteria": [
+            "All 6 Lambda functions accessible via HTTP endpoints",
+            "CORS properly configured for frontend domain",
+            "Authentication working via Cognito JWT tokens",
+            "Rate limiting configured (1000 requests/second)",
+            "API Gateway logs enabled in CloudWatch"
+          ],
+          "dependencies": [],
+          "estimated_hours": 16
+        },
+        {
+          "task_id": "CB-002",
+          "title": "Implement Environment Variables Management",
+          "status": "20% implemented",
+          "description": "No .env files exist. Lambda environment variables not properly configured. Hard-coded values present security risk.",
+          "requirements": [
+            "Create .env.example with all required variables",
+            "Create .env.development for local development",
+            "Create .env.production for production deployment",
+            "Configure Lambda environment variables in Amplify",
+            "Map environment variables to all 6 Lambda functions",
+            "Add .env* to .gitignore (verify not committed)"
+          ],
+          "environment_variables": {
+            "frontend": [
+              "VITE_AWS_REGION",
+              "VITE_USER_POOL_ID",
+              "VITE_USER_POOL_CLIENT_ID",
+              "VITE_IDENTITY_POOL_ID",
+              "VITE_S3_BUCKET_NAME",
+              "VITE_API_GATEWAY_URL",
+              "VITE_ENVIRONMENT"
+            ],
+            "backend_lambda": [
+              "AWS_REGION",
+              "DYNAMODB_TABLE_FILES",
+              "DYNAMODB_TABLE_FOLDERS",
+              "DYNAMODB_TABLE_SHARE_LINKS",
+              "DYNAMODB_TABLE_ANALYTICS",
+              "S3_BUCKET_NAME",
+              "S3_BUCKET_BACKUP",
+              "SES_FROM_EMAIL",
+              "SES_REPLY_TO_EMAIL",
+              "ENCRYPTION_KEY_ID",
+              "LOG_LEVEL",
+              "ENVIRONMENT"
+            ]
+          },
+          "implementation_steps": [
+            "1. Create .env.example at project root",
+            "2. Document each variable with comments",
+            "3. Update amplify/functions/*/resource.ts to include environment variables",
+            "4. Modify Lambda handlers to read from process.env",
+            "5. Update frontend vite.config.ts to load environment variables",
+            "6. Create scripts/generate-env.sh for automated setup",
+            "7. Update README.md with environment setup instructions"
+          ],
+          "acceptance_criteria": [
+            ".env.example exists with all variables documented",
+            "All Lambda functions use environment variables (no hard-coded values)",
+            "Frontend can be configured via .env.development",
+            "Production deployment uses .env.production",
+            "No sensitive data committed to git"
+          ],
+          "estimated_hours": 8
+        },
+        {
+          "task_id": "CB-003",
+          "title": "Implement Least-Privilege IAM Policies",
+          "status": "30% implemented",
+          "description": "Lambda functions using overly permissive IAM roles. Need resource-based policies with least privilege.",
+          "requirements": [
+            "Create custom IAM policies for each Lambda function",
+            "Restrict S3 access to specific buckets and prefixes",
+            "Limit DynamoDB access to specific tables and operations",
+            "Remove wildcard permissions (*)",
+            "Implement resource-based policies",
+            "Add IAM policy for API Gateway execution"
+          ],
+          "policies_needed": {
+            "fileService": [
+              "s3:GetObject on arn:aws:s3:::cloudvault-files/*",
+              "s3:PutObject on arn:aws:s3:::cloudvault-files/*",
+              "dynamodb:GetItem on files table",
+              "dynamodb:PutItem on files table",
+              "dynamodb:UpdateItem on files table"
+            ],
+            "folderService": [
+              "dynamodb:GetItem on folders table",
+              "dynamodb:PutItem on folders table",
+              "dynamodb:Query on folders table GSI"
+            ],
+            "backupService": [
+              "s3:GetObject on cloudvault-files/*",
+              "s3:PutObject on cloudvault-backups/*",
+              "dynamodb:Scan on files table",
+              "dynamodb:PutItem on analytics table"
+            ],
+            "analyticsService": [
+              "dynamodb:Query on analytics table",
+              "dynamodb:PutItem on analytics table",
+              "dynamodb:GetItem on analytics table"
+            ],
+            "fileProcessor": [
+              "s3:GetObject on cloudvault-files/*",
+              "s3:PutObject on cloudvault-processed/*",
+              "dynamodb:UpdateItem on files table"
+            ],
+            "notificationService": [
+              "ses:SendEmail for verified email addresses",
+              "dynamodb:GetItem on users table"
+            ]
+          },
+          "implementation_steps": [
+            "1. Create amplify/iam/policies.ts with custom policy definitions",
+            "2. Update each amplify/functions/*/resource.ts with specific policies",
+            "3. Remove overly broad permissions from Amplify defaults",
+            "4. Add condition keys for enhanced security (aws:SourceIp, aws:SecureTransport)",
+            "5. Test each Lambda with new restricted permissions",
+            "6. Document IAM policies in docs/security.md"
+          ],
+          "acceptance_criteria": [
+            "No Lambda has wildcard (*) resource permissions",
+            "Each Lambda can only access required resources",
+            "S3 access limited to specific prefixes",
+            "DynamoDB access limited to specific tables and operations",
+            "API Gateway can invoke Lambdas via resource-based policy"
+          ],
+          "estimated_hours": 12
+        },
+        {
+          "task_id": "CB-004",
+          "title": "Add Missing NPM Dependencies",
+          "status": "70% implemented",
+          "description": "Critical packages missing or used without declaration in package.json",
+          "requirements": [
+            "Add 'sharp' for image processing in Lambda",
+            "Add 'uuid' for unique identifier generation",
+            "Add testing libraries (Jest, React Testing Library)",
+            "Add '@aws-sdk/client-ses' for email notifications",
+            "Add '@aws-sdk/client-eventbridge' for event scheduling",
+            "Verify all import statements have corresponding dependencies"
+          ],
+          "dependencies_to_add": {
+            "production": {
+              "sharp": "^0.33.0",
+              "uuid": "^9.0.1",
+              "@aws-sdk/client-ses": "^3.450.0",
+              "@aws-sdk/client-eventbridge": "^3.450.0"
+            },
+            "development": {
+              "jest": "^29.7.0",
+              "@types/jest": "^29.5.8",
+              "ts-jest": "^29.1.1",
+              "@testing-library/react": "^14.1.2",
+              "@testing-library/jest-dom": "^6.1.5",
+              "@testing-library/user-event": "^14.5.1",
+              "cypress": "^13.6.0",
+              "@cypress/webpack-preprocessor": "^6.0.1",
+              "ts-node": "^10.9.1"
+            }
+          },
+          "implementation_steps": [
+            "1. Update root package.json with new dependencies",
+            "2. Update Lambda package.json files (6 functions) with sharp and uuid",
+            "3. Run npm install in root and all Lambda directories",
+            "4. Update Lambda bundle configuration to include new packages",
+            "5. Test imports in TypeScript files",
+            "6. Update package-lock.json and commit"
+          ],
+          "acceptance_criteria": [
+            "All dependencies installed without errors",
+            "No TypeScript import errors",
+            "Lambda layers configured for sharp (if needed)",
+            "package.json versions locked for consistency"
+          ],
+          "estimated_hours": 4
+        }
+      ]
+    },
+    "phase_2_quality": {
+      "priority": "CRITICAL",
+      "timeline": "Week 2-3",
+      "tasks": [
+        {
+          "task_id": "CB-005",
+          "title": "Set Up Testing Infrastructure",
+          "status": "0% implemented",
+          "description": "ZERO test files in entire codebase. No quality assurance or regression prevention.",
+          "requirements": [
+            "Configure Jest for unit testing",
+            "Set up React Testing Library for component tests",
+            "Configure Cypress for E2E testing",
+            "Create test utilities and helpers",
+            "Set up code coverage reporting",
+            "Target: 70% code coverage minimum"
+          ],
+          "test_structure": {
+            "unit_tests": [
+              "src/lib/__tests__/authService.test.ts",
+              "src/lib/__tests__/s3Service.test.ts",
+              "src/lib/__tests__/dynamoService.test.ts",
+              "src/lib/__tests__/lambdaService.test.ts",
+              "amplify/functions/fileService/__tests__/handler.test.ts",
+              "amplify/functions/folderService/__tests__/handler.test.ts",
+              "amplify/functions/analyticsService/__tests__/handler.test.ts",
+              "amplify/functions/backupService/__tests__/handler.test.ts",
+              "amplify/functions/fileProcessor/__tests__/handler.test.ts",
+              "amplify/functions/notificationService/__tests__/handler.test.ts"
+            ],
+            "component_tests": [
+              "src/components/__tests__/FileUpload.test.tsx",
+              "src/components/__tests__/FileManager.test.tsx",
+              "src/components/__tests__/FolderTree.test.tsx",
+              "src/components/__tests__/ShareDialog.test.tsx"
+            ],
+            "integration_tests": [
+              "src/__tests__/integration/file-upload-flow.test.ts",
+              "src/__tests__/integration/folder-operations.test.ts",
+              "src/__tests__/integration/sharing-workflow.test.ts"
+            ],
+            "e2e_tests": [
+              "cypress/e2e/authentication.cy.ts",
+              "cypress/e2e/file-management.cy.ts",
+              "cypress/e2e/folder-operations.cy.ts",
+              "cypress/e2e/sharing-features.cy.ts",
+              "cypress/e2e/search-functionality.cy.ts"
+            ]
+          },
+          "implementation_steps": [
+            "1. Create jest.config.js with TypeScript support",
+            "2. Create cypress.config.ts for E2E tests",
+            "3. Set up test environment files (setupTests.ts)",
+            "4. Create mock factories for AWS services",
+            "5. Write unit tests for all service files (target: 80% coverage)",
+            "6. Write component tests for critical UI (target: 70% coverage)",
+            "7. Write integration tests for key workflows",
+            "8. Write E2E tests for user journeys",
+            "9. Configure coverage thresholds in jest.config.js",
+            "10. Add test scripts to package.json"
+          ],
+          "test_scripts": {
+            "test": "jest",
+            "test:watch": "jest --watch",
+            "test:coverage": "jest --coverage",
+            "test:e2e": "cypress run",
+            "test:e2e:open": "cypress open",
+            "test:lambda": "cd amplify/functions && npm test"
+          },
+          "acceptance_criteria": [
+            "Jest configured and running successfully",
+            "Minimum 70% code coverage achieved",
+            "All critical user flows have E2E tests",
+            "All Lambda functions have unit tests",
+            "All service modules have unit tests",
+            "Test reports generated in CI/CD",
+            "Tests run in under 5 minutes"
+          ],
+          "estimated_hours": 40
+        },
+        {
+          "task_id": "CB-006",
+          "title": "Create CI/CD Pipeline with GitHub Actions",
+          "status": "0% implemented",
+          "description": "No automated testing or deployment. Manual processes lead to errors and inconsistency.",
+          "requirements": [
+            "Create GitHub Actions workflow for CI",
+            "Automate testing on pull requests",
+            "Automate deployment to staging/production",
+            "Implement quality gates (coverage, linting)",
+            "Add branch protection rules",
+            "Configure automated rollback on failure"
+          ],
+          "workflow_files": {
+            ".github/workflows/ci.yml": {
+              "triggers": ["pull_request", "push to main"],
+              "jobs": [
+                "lint",
+                "type-check",
+                "unit-tests",
+                "integration-tests",
+                "build"
+              ],
+              "quality_gates": {
+                "code_coverage": "70%",
+                "typescript_errors": "0",
+                "eslint_warnings": "0"
+              }
+            },
+            ".github/workflows/deploy-staging.yml": {
+              "triggers": ["push to develop"],
+              "jobs": [
+                "run-tests",
+                "build",
+                "deploy-amplify-staging",
+                "run-e2e-tests",
+                "notify-slack"
+              ]
+            },
+            ".github/workflows/deploy-production.yml": {
+              "triggers": ["release tag"],
+              "jobs": [
+                "run-tests",
+                "build",
+                "deploy-amplify-production",
+                "run-smoke-tests",
+                "notify-slack"
+              ],
+              "approval_required": true
+            }
+          },
+          "implementation_steps": [
+            "1. Create .github/workflows directory",
+            "2. Create ci.yml workflow for continuous integration",
+            "3. Create deploy-staging.yml for automatic staging deployment",
+            "4. Create deploy-production.yml for production deployment",
+            "5. Configure AWS credentials as GitHub secrets",
+            "6. Set up Amplify CLI in workflows",
+            "7. Configure branch protection rules for main branch",
+            "8. Add status checks requirement before merge",
+            "9. Set up Slack notifications for deployment status",
+            "10. Test workflows with sample PRs"
+          ],
+          "github_secrets_needed": [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_REGION",
+            "AMPLIFY_APP_ID",
+            "SLACK_WEBHOOK_URL"
+          ],
+          "acceptance_criteria": [
+            "All tests run automatically on PR creation",
+            "Failed tests block PR merge",
+            "Staging deploys automatically on develop branch push",
+            "Production deploys require manual approval",
+            "Deployment status visible in GitHub",
+            "Slack notifications sent for all deployments",
+            "Rollback triggered automatically on deployment failure"
+          ],
+          "estimated_hours": 16
+        }
+      ]
+    },
+    "phase_3_production": {
+      "priority": "HIGH",
+      "timeline": "Week 3-4",
+      "tasks": [
+        {
+          "task_id": "CB-007",
+          "title": "Configure CloudWatch Monitoring and Alerting",
+          "status": "5% implemented",
+          "description": "No visibility into production issues. Cannot detect or respond to problems.",
+          "requirements": [
+            "Create CloudWatch dashboards for key metrics",
+            "Set up CloudWatch alarms for critical issues",
+            "Configure log aggregation for all Lambdas",
+            "Implement custom metrics for business KPIs",
+            "Set up SNS topics for alert notifications",
+            "Configure log retention policies"
+          ],
+          "dashboards": {
+            "application_health": {
+              "widgets": [
+                "Lambda invocation count (all functions)",
+                "Lambda error rate",
+                "Lambda duration (p50, p95, p99)",
+                "API Gateway 4xx/5xx errors",
+                "S3 request count",
+                "DynamoDB consumed capacity",
+                "Cognito authentication success rate"
+              ]
+            },
+            "business_metrics": {
+              "widgets": [
+                "Active users (daily, weekly, monthly)",
+                "Files uploaded per day",
+                "Storage usage per user",
+                "Share link creation rate",
+                "File download count",
+                "Search queries per day"
+              ]
+            },
+            "performance_metrics": {
+              "widgets": [
+                "Page load time (frontend)",
+                "API response time",
+                "File upload duration",
+                "Search query latency",
+                "Database query performance"
+              ]
+            }
+          },
+          "alarms": [
+            {
+              "name": "HighLambdaErrorRate",
+              "metric": "Errors",
+              "threshold": "5% over 5 minutes",
+              "action": "SNS notification to on-call"
+            },
+            {
+              "name": "APIGateway5xxErrors",
+              "metric": "5XXError",
+              "threshold": ">10 in 5 minutes",
+              "action": "PagerDuty alert"
+            },
+            {
+              "name": "HighDynamoDBThrottle",
+              "metric": "UserErrors",
+              "threshold": ">5 in 5 minutes",
+              "action": "SNS notification"
+            },
+            {
+              "name": "S3BucketSizeAnomaly",
+              "metric": "BucketSizeBytes",
+              "threshold": "Anomaly detection",
+              "action": "Email notification"
+            },
+            {
+              "name": "LambdaConcurrentExecutions",
+              "metric": "ConcurrentExecutions",
+              "threshold": ">80% of limit",
+              "action": "SNS notification"
+            }
+          ],
+          "implementation_steps": [
+            "1. Create amplify/monitoring/dashboards.ts with dashboard definitions",
+            "2. Create amplify/monitoring/alarms.ts with alarm configurations",
+            "3. Set up SNS topics for notifications",
+            "4. Configure CloudWatch Logs Insights queries",
+            "5. Implement structured logging in Lambda functions",
+            "6. Add correlation IDs for request tracing",
+            "7. Create runbooks for each alarm type",
+            "8. Test alarms by triggering conditions",
+            "9. Document monitoring setup in docs/monitoring.md"
+          ],
+          "acceptance_criteria": [
+            "All Lambda functions send logs to CloudWatch",
+            "Key metrics dashboards visible in CloudWatch console",
+            "Critical alarms configured and tested",
+            "SNS notifications working for alarms",
+            "Log retention set to 30 days",
+            "Structured logging implemented (JSON format)",
+            "Correlation IDs present in all logs"
+          ],
+          "estimated_hours": 20
+        },
+        {
+          "task_id": "CB-008",
+          "title": "Implement AWS X-Ray Distributed Tracing",
+          "status": "0% implemented",
+          "description": "Cannot trace requests across services. Difficult to debug performance issues.",
+          "requirements": [
+            "Enable X-Ray for all Lambda functions",
+            "Enable X-Ray for API Gateway",
+            "Instrument frontend with X-Ray SDK",
+            "Create service map visualization",
+            "Configure sampling rules",
+            "Implement custom segments for business logic"
+          ],
+          "implementation_steps": [
+            "1. Update Lambda function configurations to enable X-Ray",
+            "2. Add AWS X-Ray SDK to Lambda dependencies",
+            "3. Instrument Lambda handlers with X-Ray segments",
+            "4. Enable X-Ray tracing on API Gateway",
+            "5. Add X-Ray middleware to critical code paths",
+            "6. Configure sampling rules (100% errors, 5% success)",
+            "7. Create X-Ray groups for different service categories",
+            "8. Test trace propagation across services",
+            "9. Create CloudWatch alarms for high trace error rates"
+          ],
+          "acceptance_criteria": [
+            "X-Ray enabled on all Lambda functions",
+            "Service map shows complete request flow",
+            "Traces include custom annotations",
+            "Sampling rules properly configured",
+            "X-Ray insights available in CloudWatch",
+            "Performance bottlenecks identifiable from traces"
+          ],
+          "estimated_hours": 12
+        },
+        {
+          "task_id": "CB-009",
+          "title": "Implement Security Hardening",
+          "status": "40% implemented",
+          "description": "Missing critical security layers: WAF, VPC, Secrets Manager, CloudTrail, GuardDuty.",
+          "requirements": {
+            "aws_waf": [
+              "Create WAF Web ACL for API Gateway",
+              "Add AWS Managed Rules (Core, Known Bad Inputs)",
+              "Configure rate limiting (2000 req/5min per IP)",
+              "Add geo-blocking rules (if needed)",
+              "Set up WAF logging to S3"
+            ],
+            "vpc": [
+              "Create VPC for Lambda functions",
+              "Configure private subnets for Lambda",
+              "Set up NAT Gateway for internet access",
+              "Configure VPC endpoints for AWS services",
+              "Update Lambda security groups"
+            ],
+            "secrets_manager": [
+              "Move sensitive env vars to Secrets Manager",
+              "Create secrets for database credentials",
+              "Create secrets for API keys",
+              "Configure automatic secret rotation",
+              "Update Lambda IAM to access secrets"
+            ],
+            "cloudtrail": [
+              "Enable CloudTrail for all regions",
+              "Configure S3 bucket for trail logs",
+              "Enable log file validation",
+              "Set up CloudWatch Logs for trail",
+              "Create alerts for suspicious activity"
+            ],
+            "guardduty": [
+              "Enable GuardDuty in AWS account",
+              "Configure findings notifications",
+              "Set up automated responses for threats",
+              "Create runbooks for common findings"
+            ]
+          },
+          "implementation_steps": [
+            "1. Create amplify/security/waf.ts with WAF configuration",
+            "2. Create amplify/security/vpc.ts with VPC setup",
+            "3. Migrate secrets to AWS Secrets Manager",
+            "4. Enable CloudTrail with proper S3 bucket",
+            "5. Enable GuardDuty and configure notifications",
+            "6. Update Lambda functions to use VPC and secrets",
+            "7. Test security controls with penetration testing tools",
+            "8. Document security architecture in docs/security.md",
+            "9. Create incident response runbooks"
+          ],
+          "acceptance_criteria": [
+            "WAF protecting API Gateway from common attacks",
+            "Lambda functions running in VPC",
+            "No hard-coded secrets in code",
+            "CloudTrail logging all API calls",
+            "GuardDuty enabled with notifications configured",
+            "Security findings addressed within SLA",
+            "Penetration test passed"
+          ],
+          "estimated_hours": 32
+        },
+        {
+          "task_id": "CB-010",
+          "title": "Implement Event-Driven Architecture",
+          "status": "10% implemented",
+          "description": "Missing event triggers for automation. No async processing capability.",
+          "requirements": {
+            "s3_event_notifications": [
+              "Configure S3 event notifications for file uploads",
+              "Trigger fileProcessor Lambda on new uploads",
+              "Trigger backup Lambda for critical files",
+              "Configure dead-letter queue for failed events"
+            ],
+            "eventbridge_schedules": [
+              "Schedule daily backup job (2 AM UTC)",
+              "Schedule weekly analytics aggregation",
+              "Schedule monthly storage cleanup",
+              "Schedule hourly health checks"
+            ],
+            "sqs_queues": [
+              "Create queue for file processing jobs",
+              "Create queue for notification delivery",
+              "Create queue for analytics events",
+              "Configure DLQ for all queues"
+            ]
+          },
+          "implementation_steps": [
+            "1. Create amplify/events/s3-notifications.ts",
+            "2. Configure S3 bucket notifications for file events",
+            "3. Create amplify/events/schedules.ts with EventBridge rules",
+            "4. Create SQS queues for async processing",
+            "5. Update Lambda functions to process SQS messages",
+            "6. Configure Lambda concurrency for queue processing",
+            "7. Set up DLQ monitoring and alerts",
+            "8. Test event flows end-to-end",
+            "9. Document event architecture in docs/events.md"
+          ],
+          "acceptance_criteria": [
+            "File uploads automatically trigger processing",
+            "Scheduled jobs running on defined cron expressions",
+            "SQS queues processing messages reliably",
+            "DLQ configured and monitored",
+            "Event-driven workflows documented",
+            "No message loss during processing"
+          ],
+          "estimated_hours": 16
+        },
+        {
+          "task_id": "CB-011",
+          "title": "Complete Missing Service Implementations",
+          "status": "60% implemented",
+          "description": "dynamoService incomplete, analytics UI missing, profile management incomplete.",
+          "requirements": {
+            "dynamoService_completion": [
+              "Implement File table operations (create, read, update, delete, query)",
+              "Implement ShareLink table operations",
+              "Implement Analytics table operations",
+              "Add batch operations for performance",
+              "Implement pagination for large result sets"
+            ],
+            "analytics_dashboard": [
+              "Create AnalyticsDashboard.tsx component",
+              "Implement storage usage chart (recharts)",
+              "Implement file type distribution chart",
+              "Implement activity timeline",
+              "Add export to CSV functionality"
+            ],
+            "profile_management": [
+              "Add job title field to user profile",
+              "Add timezone selection",
+              "Add language preferences",
+              "Implement profile picture upload",
+              "Add notification preferences"
+            ]
+          },
+          "implementation_steps": [
+            "1. Complete dynamoService.ts with all CRUD operations",
+            "2. Create src/pages/Analytics.tsx with dashboard",
+            "3. Install recharts for data visualization",
+            "4. Create chart components for analytics data",
+            "5. Update Profile.tsx with additional fields",
+            "6. Add profile picture upload to S3",
+            "7. Create API routes for new profile fields",
+            "8. Test all new functionality",
+            "9. Write tests for new code"
+          ],
+          "acceptance_criteria": [
+            "dynamoService supports all table operations",
+            "Analytics dashboard displays key metrics",
+            "Profile management includes all specified fields",
+            "All new features have tests",
+            "UI/UX consistent with existing design"
+          ],
+          "estimated_hours": 24
+        },
+        {
+          "task_id": "CB-012",
+          "title": "Create Production Deployment Automation",
+          "status": "20% implemented",
+          "description": "No automated deployment scripts. Manual processes error-prone.",
+          "requirements": [
+            "Create deployment scripts for each environment",
+            "Automate database schema migrations",
+            "Create backup/restore automation",
+            "Implement blue-green deployment strategy",
+            "Create rollback procedures",
+            "Document deployment process"
+          ],
+          "scripts": {
+            "scripts/deploy-staging.sh": "Deploy to staging environment",
+            "scripts/deploy-production.sh": "Deploy to production with checks",
+            "scripts/migrate-database.sh": "Run DynamoDB schema migrations",
+            "scripts/backup-production.sh": "Backup production data",
+            "scripts/restore-from-backup.sh": "Restore from backup",
+            "scripts/rollback.sh": "Rollback to previous version",
+            "scripts/health-check.sh": "Verify deployment health"
+          },
+          "implementation_steps": [
+            "1. Create scripts directory structure",
+            "2. Write deployment scripts with pre-flight checks",
+            "3. Implement database migration system",
+            "4. Create automated backup scripts",
+            "5. Implement rollback automation",
+            "6. Add deployment verification tests",
+            "7. Create deployment runbook",
+            "8. Test deployment process in staging",
+            "9. Document in docs/deployment.md"
+          ],
+          "acceptance_criteria": [
+            "One-command deployment to any environment",
+            "Automated pre-deployment checks",
+            "Database migrations automated",
+            "Backup created before each deployment",
+            "Rollback completes in under 5 minutes",
+            "Deployment process documented"
+          ],
+          "estimated_hours": 16
+        }
+      ]
+    }
+  },
+  "ai_assistant_instructions": {
+    "overall_approach": "You are helping implement production readiness for CloudVault. Work systematically through each phase, completing critical blockers first before moving to high-priority items.",
+    "implementation_priorities": [
+      "1. API Gateway configuration (nothing works without this)",
+      "2. Environment variables and IAM policies (security fundamentals)",
+      "3. Testing infrastructure (quality assurance)",
+      "4. CI/CD pipeline (automation)",
+      "5. Monitoring and observability (visibility)",
+      "6. Security hardening (compliance)",
+      "7. Event-driven architecture (scalability)",
+      "8. Feature completion (polish)"
+    ],
+    "development_guidelines": {
+      "code_quality": [
+        "Follow existing TypeScript patterns in codebase",
+        "Use async/await for asynchronous operations",
+        "Implement proper error handling with try-catch",
+        "Add detailed JSDoc comments for all functions",
+        "Use TypeScript strict mode",
+        "Follow AWS best practices for Lambda",
+        "Implement logging with correlation IDs"
+      ],
+      "testing_requirements": [
+        "Write unit tests before implementing features",
+        "Achieve minimum 70% code coverage",
+        "Test error scenarios and edge cases",
+        "Mock AWS services in tests",
+        "Write integration tests for critical workflows",
+        "Create E2E tests for user journeys"
+      ],
+      "security_requirements": [
+        "Never commit secrets or credentials",
+        "Use environment variables for configuration",
+        "Implement least-privilege IAM policies",
+        "Validate all user inputs",
+        "Use parameterized queries for DynamoDB",
+        "Enable encryption at rest and in transit",
+        "Implement rate limiting and throttling"
+      ],
+      "documentation_requirements": [
+        "Update README.md with setup instructions",
+        "Document all APIs with examples",
+        "Create architecture diagrams",
+        "Write runbooks for operations",
+        "Document deployment process",
+        "Add inline code comments",
+        "Create troubleshooting guides"
+      ]
+    },
+    "when_implementing_each_task": {
+      "step_1": "Read the task requirements thoroughly",
+      "step_2": "Review existing code to understand patterns",
+      "step_3": "Create implementation plan with subtasks",
+      "step_4": "Write tests first (TDD approach)",
+      "step_5": "Implement the feature incrementally",
+      "step_6": "Run tests and verify acceptance criteria",
+      "step_7": "Update documentation",
+      "step_8": "Create pull request with detailed description"
+    },
+    "example_prompts_for_ai": {
+      "starting_api_gateway": "I need to implement task CB-001: Configure API Gateway for all Lambda functions. Please help me create the amplify/api/resource.ts file with routes for all 6 Lambda functions, configure CORS, and set up Cognito authentication.",
+      "setting_up_tests": "I need to implement task CB-005: Set up testing infrastructure. Please help me configure Jest, create test utilities, and write unit tests for the authService.ts file.",
+      "creating_ci_cd": "I need to implement task CB-006: Create CI/CD pipeline. Please help me create the GitHub Actions workflow file for continuous integration with quality gates.",
+      "implementing_monitoring": "I need to implement task CB-007: Configure CloudWatch monitoring. Please help me create CloudWatch dashboards and alarms for key application metrics.",
+      "hardening_security": "I need to implement task CB-009: Implement security hardening. Please help me configure AWS WAF for API Gateway with managed rules and rate limiting."
+    }
+  },
+  "success_metrics": {
+    "phase_1_complete": {
+      "criteria": [
+        "All Lambda functions accessible via API Gateway",
+        "Environment variables properly configured",
+        "IAM policies following least privilege",
+        "All dependencies installed and working"
+      ],
+      "measurement": "100% of critical blocker tasks completed"
+    },
+    "phase_2_complete": {
+      "criteria": [
+        "70%+ code coverage achieved",
+        "CI/CD pipeline running successfully",
+        "All tests passing in pipeline",
+        "Automated deployments working"
+      ],
+      "measurement": "100% of quality tasks completed"
+    },
+    "phase_3_complete": {
+      "criteria": [
+        "CloudWatch dashboards showing metrics",
+        "X-Ray tracing enabled",
+        "Security controls implemented",
+        "Event-driven workflows functioning",
+        "All features complete"
+      ],
+      "measurement": "90%+ overall production readiness"
+    }
+  },
+  "risk_mitigation": {
+    "potential_blockers": [
+      {
+        "risk": "API Gateway Lambda integration issues",
+        "mitigation": "Test each endpoint individually with Postman before frontend integration",
+        "contingency": "Use Lambda Function URLs as temporary alternative"
+      },
+      {
+        "risk": "IAM permission errors after tightening policies",
+        "mitigation": "Test in staging environment first, enable CloudTrail to see permission denials",
+        "contingency": "Keep previous policy versions for quick rollback"
+      },
+      {
+        "risk": "Test coverage taking too long",
+        "mitigation": "Prioritize critical paths first, parallelize test writing across team",
+        "contingency": "Accept 60% coverage initially, improve iteratively"
+      },
+      {
+        "risk": "VPC configuration breaking Lambda connectivity",
+        "mitigation": "Set up VPC in staging first, ensure NAT Gateway and endpoints configured",
+        "contingency": "Lambda can run outside VPC initially if needed"
+      }
+    ]
+  },
+  "deliverables": {
+    "code": [
+      "amplify/api/resource.ts - API Gateway configuration",
+      "amplify/monitoring/ - CloudWatch dashboards and alarms",
+      "amplify/security/ - WAF, VPC, security configurations",
+      ".github/workflows/ - CI/CD pipeline files",
+      "scripts/ - Deployment and operational scripts",
+      "__tests__/ - Comprehensive test suite"
+    ],
+    "documentation": [
+      "docs/api-documentation.md - API endpoint reference",
+      "docs/deployment.md - Deployment procedures",
+      "docs/monitoring.md - Observability guide",
+      "docs/security.md - Security architecture",
+      "docs/runbooks/ - Operational runbooks",
+      "README.md - Updated setup instructions"
+    ],
+    "infrastructure": [
+      "API Gateway with all routes configured",
+      "CloudWatch dashboards and alarms",
+      "AWS WAF Web ACL",
+      "VPC with private subnets",
+      "EventBridge schedules",
+      "SQS queues with DLQs"
+    ]
+  }
+}
