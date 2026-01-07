@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Search, 
+import {
+  Search,
   Trash2,
   RotateCcw,
   Delete,
@@ -27,6 +27,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TrashItem {
   id: string;
@@ -43,8 +53,12 @@ export default function Trash() {
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
 
+  const [itemToDelete, setItemToDelete] = useState<TrashItem | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
   // Mock trash data
-  const trashItems: TrashItem[] = [
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([
     {
       id: '1',
       name: 'Old Project Files',
@@ -94,7 +108,7 @@ export default function Trash() {
       originalPath: '/Recordings/Meetings',
       icon: Video
     }
-  ];
+  ]);
 
   const getFileIcon = (type: string, fileType?: string) => {
     if (type === 'folder') return Folder;
@@ -120,7 +134,7 @@ export default function Trash() {
     const now = new Date();
     const deleted = new Date(dateString);
     const diffInHours = Math.floor((now.getTime() - deleted.getTime()) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 24) {
       return `${diffInHours} hours ago`;
     } else {
@@ -130,21 +144,53 @@ export default function Trash() {
   };
 
   const handleRestore = (item: TrashItem) => {
+    // Remove from trash
+    setTrashItems(prev => prev.filter(i => i.id !== item.id));
+
     toast({
       title: "Item restored",
       description: `${item.name} has been restored to ${item.originalPath}`,
     });
   };
 
-  const handlePermanentDelete = (item: TrashItem) => {
-    toast({
-      title: "Item permanently deleted",
-      description: `${item.name} has been permanently removed`,
-      variant: "destructive",
-    });
+  const initiateDelete = (item: TrashItem) => {
+    setItemToDelete(item);
+    setIsDeletingAll(false);
+    setShowDeleteDialog(true);
+  };
+
+  const initiateEmptyTrash = () => {
+    setIsDeletingAll(true);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (isDeletingAll) {
+      setTrashItems([]);
+      toast({
+        title: "Trash emptied",
+        description: "All items have been permanently deleted",
+        variant: "destructive",
+      });
+    } else if (itemToDelete) {
+      setTrashItems(prev => prev.filter(i => i.id !== itemToDelete.id));
+      toast({
+        title: "Item permanently deleted",
+        description: `${itemToDelete.name} has been permanently removed`,
+        variant: "destructive",
+      });
+    }
+    setShowDeleteDialog(false);
+    setItemToDelete(null);
+    setIsDeletingAll(false);
   };
 
   const handleEmptyTrash = () => {
+    if (trashItems.length === 0) return;
+
+    // Clear all items
+    setTrashItems([]);
+
     toast({
       title: "Trash emptied",
       description: "All items have been permanently deleted",
@@ -158,7 +204,7 @@ export default function Trash() {
 
   const renderTrashItem = (item: TrashItem) => {
     const IconComponent = getFileIcon(item.type, item.fileType);
-    
+
     return (
       <Card key={item.id} className="hover:shadow-md transition-all duration-200 border-l-4 border-l-red-200">
         <CardHeader className="pb-3">
@@ -181,27 +227,16 @@ export default function Trash() {
                 </div>
               </div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleRestore(item)}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Restore
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={() => handlePermanentDelete(item)}
-                  className="text-red-600"
-                >
-                  <Delete className="h-4 w-4 mr-2" />
-                  Delete Forever
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => handleRestore(item)}>
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Restore
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => initiateDelete(item)}>
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
@@ -217,7 +252,12 @@ export default function Trash() {
           <p className="text-muted-foreground">Manage your deleted files and folders</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleEmptyTrash} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={initiateEmptyTrash}
+            className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+            disabled={trashItems.length === 0}
+          >
             <Trash2 className="h-4 w-4" />
             Empty Trash
           </Button>
@@ -259,7 +299,7 @@ export default function Trash() {
             {searchQuery ? 'No items found' : 'Trash is empty'}
           </h3>
           <p className="text-muted-foreground">
-            {searchQuery 
+            {searchQuery
               ? 'Try adjusting your search terms'
               : 'Deleted files and folders will appear here'
             }
@@ -276,7 +316,7 @@ export default function Trash() {
               <div className="space-y-1">
                 <h4 className="font-medium text-blue-900">Recovery Information</h4>
                 <p className="text-sm text-blue-700">
-                  Items in trash are automatically deleted after 30 days. You can restore items 
+                  Items in trash are automatically deleted after 30 days. You can restore items
                   to their original location or delete them permanently.
                 </p>
               </div>
@@ -284,6 +324,29 @@ export default function Trash() {
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isDeletingAll
+                ? "This action cannot be undone. This will permanently delete all items in your trash."
+                : `This action cannot be undone. This will permanently delete '${itemToDelete?.name}'.`
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingAll ? "Empty Trash" : "Delete Forever"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -32,20 +32,21 @@ const App = () => (
             v7_relativeSplatPath: true
           }}
         >
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/dashboard" element={<AuthGuard><DashboardLayout><Dashboard /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/share" element={<AuthGuard><DashboardLayout><ShareFiles /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/profile" element={<AuthGuard><DashboardLayout><ProfileSettings /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/settings" element={<AuthGuard><DashboardLayout><Settings /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/shared" element={<AuthGuard><DashboardLayout><SharedFiles /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/folders" element={<AuthGuard><DashboardLayout><Folders /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/trash" element={<AuthGuard><DashboardLayout><Trash /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/storage" element={<AuthGuard><DashboardLayout><StorageSettings /></DashboardLayout></AuthGuard>} />
-              <Route path="/dashboard/enterprise" element={<AuthGuard><DashboardLayout><EnterpriseDashboard /></DashboardLayout></AuthGuard>} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/dashboard" element={<AuthGuard><DashboardLayout><Dashboard /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/files" element={<AuthGuard><DashboardLayout><Dashboard /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/share" element={<AuthGuard><DashboardLayout><ShareFiles /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/profile" element={<AuthGuard><DashboardLayout><ProfileSettings /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/settings" element={<AuthGuard><DashboardLayout><Settings /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/shared" element={<AuthGuard><DashboardLayout><SharedFiles /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/folders" element={<AuthGuard><DashboardLayout><Folders /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/trash" element={<AuthGuard><DashboardLayout><Trash /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/storage" element={<AuthGuard><DashboardLayout><StorageSettings /></DashboardLayout></AuthGuard>} />
+            <Route path="/dashboard/enterprise" element={<AuthGuard><DashboardLayout><EnterpriseDashboard /></DashboardLayout></AuthGuard>} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

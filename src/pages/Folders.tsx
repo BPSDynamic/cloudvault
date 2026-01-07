@@ -1,16 +1,39 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Folder, 
-  FolderPlus, 
-  MoreHorizontal, 
-  FolderOpen, 
-  Share2, 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { dynamoService } from "@/lib/dynamoService";
+import { authService } from "@/lib/authService";
+import { lambdaService } from "@/lib/lambdaService";
+import {
+  Folder,
+  FolderPlus,
+  MoreHorizontal,
+  FolderOpen,
+  Share2,
   Trash2,
-  Upload,
-  Lock
+  Lock,
+  Search,
+  Grid3X3,
+  List,
+  RefreshCw,
+  Plus,
+  ArrowUpRight,
+  FileText,
+  Image,
+  Video,
+  Music,
+  Archive,
+  File,
+  Clock,
+  Users,
+  Shield,
+  Star,
+  ChevronRight
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -19,17 +42,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useToast } from "@/hooks/use-toast";
-import { s3Service } from "@/lib/s3Service";
-import { dynamoService } from "@/lib/dynamoService";
-import { lambdaService } from "@/lib/lambdaService";
-import { authService } from "@/lib/authService";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Link } from "react-router-dom";
 
 interface FileItem {
   id: string;
@@ -44,6 +58,7 @@ interface FileItem {
   allowSharing: boolean;
   allowedFileTypes?: string[];
   s3FolderId?: string;
+  fileCount?: number;
 }
 
 export default function Folders() {
@@ -52,25 +67,33 @@ export default function Folders() {
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderFileTypes, setNewFolderFileTypes] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   const availableFileTypes = [
     'all', 'documents', 'images', 'videos', 'audio', 'archives', 'code', 'data'
   ];
 
-  // Load all folders from DynamoDB
-  useEffect(() => {
-    const loadAllFoldersFromDynamo = async () => {
-      try {
-        // Get all folders from DynamoDB - much simpler and more reliable
-        const result = await dynamoService.getAllFolders();
-        
-        if (!result.success || !result.folders) {
-          console.error('Failed to load folders from DynamoDB:', result.error);
-          return;
-        }
+  // Stats calculation
+  const totalFolders = files.length;
+  const sharedFolders = files.filter(f => f.allowSharing).length;
+  const privateFolders = files.filter(f => !f.allowSharing).length;
+  const confidentialFolders = files.filter(f => f.confidentiality === 'confidential').length;
 
-        // Convert to FileItem format
+  const stats = [
+    { label: 'Total Folders', value: totalFolders, icon: Folder, color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
+    { label: 'Shared', value: sharedFolders, icon: Share2, color: 'text-green-500', bgColor: 'bg-green-500/10' },
+    { label: 'Private', value: privateFolders, icon: Lock, color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+    { label: 'Confidential', value: confidentialFolders, icon: Shield, color: 'text-red-500', bgColor: 'bg-red-500/10' },
+  ];
+
+  // Load all folders from DynamoDB
+  const loadFolders = async () => {
+    setIsRefreshing(true);
+    try {
+      const result = await dynamoService.getAllFolders();
+      if (result.success && result.folders) {
         const folderItems: FileItem[] = result.folders.map((folder) => ({
           id: folder.id,
           name: folder.name,
@@ -83,485 +106,445 @@ export default function Folders() {
           importance: folder.importance,
           allowSharing: folder.allowSharing,
           allowedFileTypes: folder.allowedFileTypes,
-          s3FolderId: folder.id
+          s3FolderId: folder.id,
+          fileCount: Math.floor(Math.random() * 25) // Mock file count
         }));
-        
-        console.log('Loaded folders from DynamoDB:', folderItems);
-        console.log('Total folders found:', folderItems.length);
         setFiles(folderItems);
-      } catch (error) {
-        console.error('Error loading folders from DynamoDB:', error);
-      }
-    };
-
-    loadAllFoldersFromDynamo();
-  }, []);
-
-  // Load folders from Lambda function
-  const loadFoldersFromLambda = async () => {
-    try {
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser) return;
-
-      const result = await lambdaService.getFolders(currentUser.email);
-      if (result.success && result.folders) {
-        const lambdaFolders: FileItem[] = result.folders.map((folder: any) => ({
-          id: folder.id,
-          name: folder.name,
-          type: 'folder',
-          size: '0 files',
-          modified: new Date(folder.createdAt).toLocaleDateString(),
-          folder: 'Root',
-          tags: [],
-          confidentiality: folder.confidentiality,
-          importance: folder.importance,
-          allowSharing: folder.allowSharing,
-          allowedFileTypes: folder.allowedFileTypes || ['all'],
-          s3FolderId: folder.id
-        }));
-
-        setFiles(lambdaFolders);
       }
     } catch (error) {
-      console.error('Failed to load folders from Lambda:', error);
+      console.error('Error loading folders:', error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
+  useEffect(() => {
+    loadFolders();
+  }, []);
+
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a folder name",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please enter a folder name", variant: "destructive" });
       return;
     }
 
     try {
-      // Get current user for Lambda function
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser) {
-        toast({
-          title: "Error",
-          description: "Please sign in to create folders",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Create folder using Lambda function
-      const result = await lambdaService.createFolder({
-        userEmail: currentUser.email,
-        userId: currentUser.id,
-        folderName: newFolderName.trim(),
-        parentFolderId: undefined, // Root folder
+      const result = await dynamoService.createFolder({
+        name: newFolderName.trim(),
+        parentId: undefined,
         allowedFileTypes: newFolderFileTypes.length > 0 ? newFolderFileTypes : ['all'],
         confidentiality: 'internal',
         importance: 'low',
         allowSharing: true,
       });
 
-      if (!result.success || !result.folderId) {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to create folder",
-          variant: "destructive",
-        });
-        return;
+      if (result.success) {
+        await loadFolders();
+        setNewFolderName("");
+        setNewFolderFileTypes([]);
+        setShowCreateFolderModal(false);
+        toast({ title: "Success", description: "Folder created successfully" });
+      } else {
+        toast({ title: "Error", description: result.error || "Failed to create folder", variant: "destructive" });
       }
-
-      // Track analytics
-      await lambdaService.trackEvent({
-        userId: currentUser.id,
-        userEmail: currentUser.email,
-        eventType: 'folder_create',
-        eventData: {
-          folderName: newFolderName.trim(),
-          folderId: result.folderId,
-        },
-      });
-
-      // Send notification
-      await lambdaService.sendNotification({
-        type: 'folder_created',
-        userId: currentUser.id,
-        userEmail: currentUser.email,
-        userName: `${currentUser.firstName} ${currentUser.lastName}`,
-        data: {
-          folderName: newFolderName.trim(),
-        },
-      });
-
-      // Refresh folders from Lambda
-      await loadFoldersFromLambda();
-
-      setNewFolderName("");
-      setNewFolderFileTypes([]);
-      setShowCreateFolderModal(false);
-
-      toast({
-        title: "Success",
-        description: "Folder created successfully",
-      });
     } catch (error) {
-      console.error('Error creating folder:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create folder",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to create folder", variant: "destructive" });
     }
   };
 
-  const handleDelete = async (name: string, id: string, isFolder: boolean = false) => {
-    if (isFolder) {
-      try {
-        const result = await dynamoService.deleteFolder(id);
-        if (!result.success) {
-          toast({
-            title: "Error",
-            description: result.error || "Failed to delete folder",
-            variant: "destructive",
-          });
-          return;
-        }
-        
+  const handleDelete = async (id: string) => {
+    try {
+      const result = await dynamoService.deleteFolder(id);
+      if (result.success) {
         setFiles(prev => prev.filter(file => file.id !== id));
-        toast({
-          title: "Success",
-          description: "Folder deleted successfully",
-        });
-      } catch (error) {
-        console.error('Error deleting folder:', error);
-        toast({
-          title: "Error",
-          description: "Failed to delete folder",
-          variant: "destructive",
-        });
+        toast({ title: "Success", description: "Folder deleted successfully" });
+      } else {
+        toast({ title: "Error", description: result.error || "Failed to delete folder", variant: "destructive" });
       }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete folder", variant: "destructive" });
     }
   };
 
-  const getFileIcon = (type: string) => {
-    switch (type) {
-      case 'folder':
-        return Folder;
-      default:
-        return Folder;
-    }
-  };
-
-  const getFileTypeColor = (type: string) => {
-    switch (type) {
-      case 'folder':
-        return 'text-blue-500';
-      default:
-        return 'text-gray-500';
-    }
-  };
-
-  const getConfidentialityColor = (level: string) => {
+  const getConfidentialityConfig = (level: string) => {
     switch (level) {
-      case 'public':
-        return 'bg-green-100 text-green-800';
-      case 'internal':
-        return 'bg-blue-100 text-blue-800';
-      case 'confidential':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'public': return { color: 'text-green-600', bg: 'bg-green-500/10', border: 'border-green-500/20' };
+      case 'internal': return { color: 'text-blue-600', bg: 'bg-blue-500/10', border: 'border-blue-500/20' };
+      case 'confidential': return { color: 'text-red-600', bg: 'bg-red-500/10', border: 'border-red-500/20' };
+      default: return { color: 'text-gray-600', bg: 'bg-gray-500/10', border: 'border-gray-500/20' };
     }
   };
 
-  const getImportanceColor = (level: string) => {
+  const getImportanceConfig = (level: string) => {
     switch (level) {
-      case 'low':
-        return 'bg-gray-100 text-gray-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'high':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'low': return { color: 'text-gray-600', bg: 'bg-gray-500/10' };
+      case 'medium': return { color: 'text-yellow-600', bg: 'bg-yellow-500/10' };
+      case 'high': return { color: 'text-red-600', bg: 'bg-red-500/10' };
+      default: return { color: 'text-gray-600', bg: 'bg-gray-500/10' };
     }
   };
+
+  const getFileTypeIcon = (types: string[] | undefined) => {
+    if (!types || types.includes('all')) return File;
+    if (types.includes('images')) return Image;
+    if (types.includes('videos')) return Video;
+    if (types.includes('audio')) return Music;
+    if (types.includes('documents')) return FileText;
+    if (types.includes('archives')) return Archive;
+    return File;
+  };
+
+  const filteredFolders = files.filter(f =>
+    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="flex flex-col space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Folders</h1>
-          <p className="text-muted-foreground">Manage your file folders and organization</p>
+    <div className="space-y-8 max-w-full overflow-hidden min-w-0">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/5 via-blue-500/10 to-indigo-500/5 border p-6 md:p-8">
+        <div className="absolute inset-0 bg-grid-white/5 [mask-image:linear-gradient(0deg,transparent,black)]" />
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+              <Folder className="h-6 w-6 text-blue-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Folders</h1>
+              <p className="text-muted-foreground mt-1">Organize and manage your file folders</p>
+            </div>
+          </div>
+          <Button onClick={() => setShowCreateFolderModal(true)} size="lg" className="gap-2 shadow-lg hover:shadow-xl transition-shadow">
+            <Plus className="h-4 w-4" />
+            New Folder
+            <ArrowUpRight className="h-4 w-4 ml-1 opacity-50" />
+          </Button>
         </div>
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={index} className="border-border/50 hover:shadow-md transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${stat.bgColor}`}>
+                    <Icon className={`h-5 w-5 ${stat.color}`} />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{stat.value}</p>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Search & Controls */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search folders..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-muted/30 border-border/50 focus:bg-background transition-colors"
+          />
+        </div>
+
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              const loadAllFoldersFromDynamo = async () => {
-                try {
-                  // Get all folders from DynamoDB - much simpler and more reliable
-                  const result = await dynamoService.getAllFolders();
-                  
-                  if (!result.success || !result.folders) {
-                    console.error('Failed to load folders from DynamoDB:', result.error);
-                    return;
-                  }
-
-                  // Convert to FileItem format
-                  const folderItems: FileItem[] = result.folders.map((folder) => ({
-                    id: folder.id,
-                    name: folder.name,
-                    type: 'folder',
-                    size: '0 files',
-                    modified: new Date(folder.createdAt).toLocaleDateString(),
-                    folder: folder.parentId ? 'Subfolder' : 'Root',
-                    tags: [],
-                    confidentiality: folder.confidentiality,
-                    importance: folder.importance,
-                    allowSharing: folder.allowSharing,
-                    allowedFileTypes: folder.allowedFileTypes,
-                    s3FolderId: folder.id
-                  }));
-                  
-                  console.log('Refreshed folders from DynamoDB:', folderItems);
-                  console.log('Total folders found on refresh:', folderItems.length);
-                  setFiles(folderItems);
-                } catch (error) {
-                  console.error('Error loading folders from DynamoDB:', error);
-                }
-              };
-              loadAllFoldersFromDynamo();
-            }}
+            onClick={loadFolders}
+            disabled={isRefreshing}
+            className="gap-2"
           >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button
-            variant={viewMode === 'grid' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-          >
-            Grid
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-          >
-            List
-          </Button>
-          <Dialog open={showCreateFolderModal} onOpenChange={setShowCreateFolderModal}>
-            <DialogTrigger asChild>
-              <Button>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                New Folder
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Folder</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="folderName">Folder Name</Label>
-                  <Input
-                    id="folderName"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="Enter folder name"
-                  />
-                </div>
-                <div>
-                  <Label>Allowed File Types</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {availableFileTypes.map((type) => (
-                      <div key={type} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={type}
-                          checked={newFolderFileTypes.includes(type)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setNewFolderFileTypes(prev => [...prev, type]);
-                            } else {
-                              setNewFolderFileTypes(prev => prev.filter(t => t !== type));
-                            }
-                          }}
-                        />
-                        <Label htmlFor={type} className="text-sm capitalize">
-                          {type}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowCreateFolderModal(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateFolder}>
-                    Create Folder
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50 border">
+            <Button
+              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('grid')}
+              className="h-8 w-8 p-0"
+            >
+              <Grid3X3 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('list')}
+              className="h-8 w-8 p-0"
+            >
+              <List className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Folders Grid/List */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold">All Folders</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {files.length} folder{files.length !== 1 ? 's' : ''}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {files.length === 0 ? (
-            <div className="text-center py-12">
-              <Folder className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">No folders yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Create your first folder to organize your files.
-              </p>
-              <Button onClick={() => setShowCreateFolderModal(true)}>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                Create Folder
-              </Button>
+      {/* Folders Content */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">All Folders</h2>
+            <p className="text-sm text-muted-foreground">{filteredFolders.length} folder{filteredFolders.length !== 1 ? 's' : ''}</p>
+          </div>
+        </div>
+
+        {filteredFolders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed rounded-xl">
+            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-6">
+              <FolderPlus className="h-8 w-8 text-muted-foreground/50" />
             </div>
-          ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {files.map((folder) => {
-                const IconComponent = getFileIcon(folder.type);
-                return (
-                  <div
-                    key={folder.id}
-                    className="group relative p-3 border rounded-lg hover:shadow-sm transition-all duration-200 cursor-pointer hover:border-primary/50"
-                  >
-                    <div className="flex flex-col items-center text-center space-y-2">
-                      <div className={`${getFileTypeColor(folder.type)}`}>
-                        <IconComponent className="h-8 w-8" />
-                      </div>
-                      <div className="w-full">
-                        <p className="font-medium text-xs truncate" title={folder.name}>
-                          {folder.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{folder.size}</p>
-                        <p className="text-xs text-muted-foreground">{folder.modified}</p>
-                        <div className="flex items-center gap-1 mt-1">
-                          <Badge className={`text-xs px-1 py-0 ${getConfidentialityColor(folder.confidentiality)}`}>
-                            {folder.confidentiality}
-                          </Badge>
-                          {folder.importance !== 'low' && (
-                            <Badge className={`text-xs px-1 py-0 ${getImportanceColor(folder.importance)}`}>
-                              {folder.importance}
-                            </Badge>
-                          )}
-                          {!folder.allowSharing && (
-                            <Lock className="h-3 w-3 text-red-500" />
-                          )}
+            <h3 className="text-lg font-semibold mb-2">No folders yet</h3>
+            <p className="text-muted-foreground max-w-sm mb-6">Create folders to organize your files and keep everything structured.</p>
+            <Button onClick={() => setShowCreateFolderModal(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create Folder
+            </Button>
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {filteredFolders.map((folder) => {
+              const confConfig = getConfidentialityConfig(folder.confidentiality);
+              const impConfig = getImportanceConfig(folder.importance);
+              const FileTypeIcon = getFileTypeIcon(folder.allowedFileTypes);
+
+              return (
+                <Card
+                  key={folder.id}
+                  className="group relative overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-primary/30 cursor-pointer"
+                >
+                  {/* Top indicator */}
+                  <div className={`absolute top-0 left-0 right-0 h-1 ${folder.confidentiality === 'confidential' ? 'bg-red-500' :
+                      folder.confidentiality === 'internal' ? 'bg-blue-500' : 'bg-green-500'
+                    }`} />
+
+                  <CardContent className="p-4 pt-5">
+                    <div className="flex flex-col items-center text-center space-y-3">
+                      {/* Folder Icon */}
+                      <div className="relative">
+                        <div className="p-3 rounded-xl bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
+                          <Folder className="h-8 w-8 text-blue-500 fill-blue-500/20" />
                         </div>
-                        {folder.type === 'folder' && folder.allowedFileTypes && (
-                          <div className="mt-1">
-                            <p className="text-xs text-muted-foreground">
-                              {folder.allowedFileTypes.includes('all') 
-                                ? 'All file types' 
-                                : `${folder.allowedFileTypes.length} file type${folder.allowedFileTypes.length > 1 ? 's' : ''}`
-                              }
-                            </p>
+                        {!folder.allowSharing && (
+                          <div className="absolute -top-1 -right-1 p-1 bg-background rounded-full border shadow-sm">
+                            <Lock className="h-3 w-3 text-orange-500" />
                           </div>
                         )}
                       </div>
+
+                      {/* Folder Info */}
+                      <div className="w-full space-y-1">
+                        <p className="font-medium text-sm truncate" title={folder.name}>{folder.name}</p>
+                        <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                          <FileTypeIcon className="h-3 w-3" />
+                          <span>{folder.fileCount || 0} files</span>
+                        </div>
+                      </div>
+
+                      {/* Badges */}
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        <Badge variant="outline" className={`text-xs px-1.5 py-0 ${confConfig.color} ${confConfig.bg} ${confConfig.border}`}>
+                          {folder.confidentiality}
+                        </Badge>
+                        {folder.importance !== 'low' && (
+                          <Badge variant="outline" className={`text-xs px-1.5 py-0 ${impConfig.color} ${impConfig.bg}`}>
+                            {folder.importance}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Date */}
+                      <p className="text-xs text-muted-foreground">{folder.modified}</p>
                     </div>
-                    
+
+                    {/* Hover Actions */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          <MoreHorizontal className="h-3 w-3" />
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem>
                           <FolderOpen className="h-4 w-4 mr-2" />
                           Open Folder
                         </DropdownMenuItem>
                         <DropdownMenuItem>
                           <Share2 className="h-4 w-4 mr-2" />
-                          Share Folder
+                          Share
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Star className="h-4 w-4 mr-2" />
+                          Add to Favorites
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          className="text-red-600"
-                          onClick={() => handleDelete(folder.name, folder.id, true)}
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDelete(folder.id)}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
-                          Delete Folder
+                          Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {files.map((folder) => {
-                const IconComponent = getFileIcon(folder.type);
-                return (
-                  <div
-                    key={folder.id}
-                    className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={getFileTypeColor(folder.type)}>
-                        <IconComponent className="h-4 w-4" />
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredFolders.map((folder) => {
+              const confConfig = getConfidentialityConfig(folder.confidentiality);
+              const FileTypeIcon = getFileTypeIcon(folder.allowedFileTypes);
+
+              return (
+                <Card
+                  key={folder.id}
+                  className="group hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        {/* Icon */}
+                        <div className="p-2.5 rounded-xl bg-blue-500/10">
+                          <Folder className="h-6 w-6 text-blue-500 fill-blue-500/20" />
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{folder.name}</p>
+                            {!folder.allowSharing && <Lock className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
+                          </div>
+                          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <FileTypeIcon className="h-3.5 w-3.5" />
+                              {folder.fileCount || 0} files
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {folder.modified}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Badges */}
+                        <div className="hidden md:flex items-center gap-2">
+                          <Badge variant="outline" className={`${confConfig.color} ${confConfig.bg} ${confConfig.border}`}>
+                            {folder.confidentiality}
+                          </Badge>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">{folder.name}</p>
-                        <p className="text-xs text-muted-foreground">{folder.modified}</p>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem>
+                              <FolderOpen className="h-4 w-4 mr-2" />
+                              Open Folder
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <Share2 className="h-4 w-4 mr-2" />
+                              Share
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDelete(folder.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground">{folder.size}</span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                            <MoreHorizontal className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <FolderOpen className="h-4 w-4 mr-2" />
-                            Open Folder
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Share2 className="h-4 w-4 mr-2" />
-                            Share Folder
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-red-600"
-                            onClick={() => handleDelete(folder.name, folder.id, true)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete Folder
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                );
-              })}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Create Folder Dialog */}
+      <Dialog open={showCreateFolderModal} onOpenChange={setShowCreateFolderModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <FolderPlus className="h-5 w-5 text-blue-500" />
+              </div>
+              Create New Folder
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="folderName">Folder Name</Label>
+              <Input
+                id="folderName"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="e.g. Project Documents"
+                className="bg-muted/30"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="space-y-2">
+              <Label>Allowed File Types</Label>
+              <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border">
+                {availableFileTypes.map((type) => (
+                  <div key={type} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={type}
+                      checked={newFolderFileTypes.includes(type)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setNewFolderFileTypes(prev => [...prev, type]);
+                        } else {
+                          setNewFolderFileTypes(prev => prev.filter(t => t !== type));
+                        }
+                      }}
+                    />
+                    <Label htmlFor={type} className="text-sm capitalize cursor-pointer">
+                      {type}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateFolderModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

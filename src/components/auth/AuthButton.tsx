@@ -19,8 +19,8 @@ export const AuthButton = ({
   className,
   ...props
 }: AuthButtonProps) => {
-  const baseStyles = "h-12 w-full font-medium text-base transition-all duration-200 ease-smooth";
-  
+  const baseStyles = "h-10 w-full rounded-full font-medium text-base transition-all duration-200 ease-smooth";
+
   const variantStyles = {
     primary: cn(
       "bg-auth-gradient text-primary-foreground",

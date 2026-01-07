@@ -1,13 +1,3 @@
-import { Amplify } from 'aws-amplify';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-import amplify_outputs from '../../amplify_outputs.json';
-
-// Configure Amplify
-Amplify.configure(amplify_outputs);
-
-const client = generateClient<Schema>();
-
 export interface FolderData {
   id: string;
   name: string;
@@ -30,204 +20,154 @@ export interface CreateFolderInput {
   allowSharing?: boolean;
 }
 
-export class DynamoService {
-  // Get current user ID
-  private async getCurrentUserId(): Promise<string> {
-    const { getCurrentUser } = await import('aws-amplify/auth');
-    const user = await getCurrentUser();
-    return user.userId;
+export const FOLDERS_STORAGE_KEY = 'cloudvault_folders';
+
+export class MockDynamoService {
+  private getStoredFolders(): FolderData[] {
+    try {
+      const stored = localStorage.getItem(FOLDERS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error('Failed to parse stored folders', e);
+      return [];
+    }
+  }
+
+  private setStoredFolders(folders: FolderData[]) {
+    localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   }
 
   // Create a new folder
   async createFolder(input: CreateFolderInput): Promise<{ success: boolean; folder?: FolderData; error?: string }> {
-    try {
-      const userId = await this.getCurrentUserId();
-      const now = new Date().toISOString();
+    const folders = this.getStoredFolders();
 
-      const folderData = {
-        name: input.name,
-        parentId: input.parentId || null,
-        userId,
-        allowedFileTypes: input.allowedFileTypes || ['all'],
-        confidentiality: input.confidentiality || 'internal',
-        importance: input.importance || 'low',
-        allowSharing: input.allowSharing !== false,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      const result = await client.models.Folder.create(folderData);
-      
-      if (result.data) {
-        return {
-          success: true,
-          folder: result.data as FolderData
-        };
-      } else {
-        return {
-          success: false,
-          error: 'Failed to create folder'
-        };
-      }
-    } catch (error) {
-      console.error('Error creating folder:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+    // Check for duplicate names in the same parent (optional validation)
+    if (folders.some(f => f.name === input.name && f.parentId === input.parentId)) {
+      // For now, allow duplicates or handle as error? Let's allow for simplicity or append number
     }
+
+    const newFolder: FolderData = {
+      id: 'folder-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+      name: input.name,
+      parentId: input.parentId,
+      userId: 'mock-user',
+      allowedFileTypes: input.allowedFileTypes || ['all'],
+      confidentiality: input.confidentiality || 'internal',
+      importance: input.importance || 'low',
+      allowSharing: input.allowSharing !== false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    folders.push(newFolder);
+    this.setStoredFolders(folders);
+
+    return {
+      success: true,
+      folder: newFolder
+    };
   }
 
-  // Get all folders for current user
+  // Get all folders for current user (optionally filtered by parent)
   async listFolders(parentId?: string): Promise<{ success: boolean; folders?: FolderData[]; error?: string }> {
-    try {
-      const userId = await this.getCurrentUserId();
-      
-      const result = await client.models.Folder.list({
-        filter: {
-          userId: { eq: userId },
-          ...(parentId ? { parentId: { eq: parentId } } : { parentId: { attributeExists: false } })
-        }
-      });
+    const folders = this.getStoredFolders();
+    const filtered = parentId
+      ? folders.filter(f => f.parentId === parentId)
+      : folders.filter(f => !f.parentId); // Root folders if parentId is undefined
 
-      return {
-        success: true,
-        folders: result.data as FolderData[]
-      };
-    } catch (error) {
-      console.error('Error listing folders:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
+    return {
+      success: true,
+      folders: filtered
+    };
   }
 
   // Get all folders (including nested) for current user
   async getAllFolders(): Promise<{ success: boolean; folders?: FolderData[]; error?: string }> {
-    try {
-      const userId = await this.getCurrentUserId();
-      
-      const result = await client.models.Folder.list({
-        filter: {
-          userId: { eq: userId }
-        }
-      });
-
-      return {
-        success: true,
-        folders: result.data as FolderData[]
-      };
-    } catch (error) {
-      console.error('Error listing all folders:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
+    const folders = this.getStoredFolders();
+    return {
+      success: true,
+      folders: folders
+    };
   }
 
   // Get folder by ID
   async getFolder(folderId: string): Promise<{ success: boolean; folder?: FolderData; error?: string }> {
-    try {
-      const result = await client.models.Folder.get({ id: folderId });
-      
-      if (result.data) {
-        return {
-          success: true,
-          folder: result.data as FolderData
-        };
-      } else {
-        return {
-          success: false,
-          error: 'Folder not found'
-        };
-      }
-    } catch (error) {
-      console.error('Error getting folder:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+    const folders = this.getStoredFolders();
+    const folder = folders.find(f => f.id === folderId);
+
+    if (!folder) {
+      return { success: false, error: 'Folder not found' };
     }
+
+    return {
+      success: true,
+      folder
+    };
   }
 
   // Update folder
   async updateFolder(folderId: string, updates: Partial<CreateFolderInput>): Promise<{ success: boolean; folder?: FolderData; error?: string }> {
-    try {
-      const now = new Date().toISOString();
-      
-      const result = await client.models.Folder.update({
-        id: folderId,
-        ...updates,
-        updatedAt: now
-      });
+    const folders = this.getStoredFolders();
+    const index = folders.findIndex(f => f.id === folderId);
 
-      if (result.data) {
-        return {
-          success: true,
-          folder: result.data as FolderData
-        };
-      } else {
-        return {
-          success: false,
-          error: 'Failed to update folder'
-        };
-      }
-    } catch (error) {
-      console.error('Error updating folder:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+    if (index === -1) {
+      return { success: false, error: 'Folder not found' };
     }
+
+    const updatedFolder = {
+      ...folders[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    folders[index] = updatedFolder;
+    this.setStoredFolders(folders);
+
+    return {
+      success: true,
+      folder: updatedFolder
+    };
   }
 
   // Delete folder
   async deleteFolder(folderId: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      await client.models.Folder.delete({ id: folderId });
-      
-      return {
-        success: true
-      };
-    } catch (error) {
-      console.error('Error deleting folder:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+    const folders = this.getStoredFolders();
+    const filtered = folders.filter(f => f.id !== folderId);
+
+    // Also recursively delete subfolders? For now, just single level or let valid children become orphans (or handle recursion)
+    // Simple mock: just delete the target folder.
+
+    if (folders.length === filtered.length) {
+      return { success: false, error: 'Folder not found' };
     }
+
+    this.setStoredFolders(filtered);
+    return {
+      success: true
+    };
   }
 
   // Get folder hierarchy (for breadcrumbs)
   async getFolderPath(folderId: string): Promise<{ success: boolean; path?: FolderData[]; error?: string }> {
-    try {
-      const path: FolderData[] = [];
-      let currentId: string | undefined = folderId;
+    const folders = this.getStoredFolders();
+    const path: FolderData[] = [];
+    let currentId = folderId;
 
-      while (currentId) {
-        const result = await this.getFolder(currentId);
-        if (result.success && result.folder) {
-          path.unshift(result.folder);
-          currentId = result.folder.parentId || undefined;
-        } else {
-          break;
-        }
+    while (currentId) {
+      const folder = folders.find(f => f.id === currentId);
+      if (folder) {
+        path.unshift(folder);
+        currentId = folder.parentId || '';
+      } else {
+        break;
       }
-
-      return {
-        success: true,
-        path
-      };
-    } catch (error) {
-      console.error('Error getting folder path:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
     }
+
+    return {
+      success: true,
+      path
+    };
   }
 }
 
-export const dynamoService = new DynamoService();
+export const dynamoService = new MockDynamoService();

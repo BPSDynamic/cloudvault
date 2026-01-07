@@ -12,8 +12,8 @@ export const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
   ({ label, error, className, ...props }, ref) => {
     return (
       <div className="space-y-2">
-        <Label 
-          htmlFor={props.id} 
+        <Label
+          htmlFor={props.id}
           className="text-sm font-medium text-foreground"
         >
           {label}
@@ -21,7 +21,7 @@ export const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
         <Input
           ref={ref}
           className={cn(
-            "h-12 px-4 text-base",
+            "px-4 text-base",
             "bg-input border-input-border",
             "transition-all duration-200 ease-smooth",
             "focus:border-primary focus:ring-2 focus:ring-primary/20",

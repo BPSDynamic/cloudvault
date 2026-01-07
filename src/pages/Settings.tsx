@@ -5,10 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Settings as SettingsIcon, 
-  Shield, 
-  Bell, 
+import {
+  Settings as SettingsIcon,
+  Shield,
+  Bell,
   Globe,
   Palette,
   Database,
@@ -17,6 +17,7 @@ import {
   Key,
   Monitor
 } from "lucide-react";
+import { useTheme } from "@/components/theme-provider";
 
 export default function Settings() {
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,7 @@ export default function Settings() {
 
   const handleSaveSettings = async (section: string) => {
     setLoading(true);
-    
+
     // Simulate API call
     setTimeout(() => {
       setLoading(false);
@@ -70,6 +71,8 @@ export default function Settings() {
       variant: "destructive",
     });
   };
+
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="max-w-4xl space-y-8">
@@ -100,7 +103,10 @@ export default function Settings() {
                 Switch between light and dark themes
               </p>
             </div>
-            <Switch defaultChecked={false} />
+            <Switch
+              checked={theme === 'dark'}
+              onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+            />
           </div>
 
           <Separator />
@@ -160,7 +166,7 @@ export default function Settings() {
             </div>
             <Switch
               checked={security.twoFactor}
-              onCheckedChange={(checked) => 
+              onCheckedChange={(checked) =>
                 setSecurity(prev => ({ ...prev, twoFactor: checked }))
               }
             />
@@ -177,7 +183,7 @@ export default function Settings() {
             </div>
             <Switch
               checked={security.loginNotifications}
-              onCheckedChange={(checked) => 
+              onCheckedChange={(checked) =>
                 setSecurity(prev => ({ ...prev, loginNotifications: checked }))
               }
             />
@@ -194,7 +200,7 @@ export default function Settings() {
             </div>
             <Switch
               checked={security.suspiciousActivity}
-              onCheckedChange={(checked) => 
+              onCheckedChange={(checked) =>
                 setSecurity(prev => ({ ...prev, suspiciousActivity: checked }))
               }
             />
@@ -227,7 +233,7 @@ export default function Settings() {
             </div>
             <Switch
               checked={dataSettings.autoBackup}
-              onCheckedChange={(checked) => 
+              onCheckedChange={(checked) =>
                 setDataSettings(prev => ({ ...prev, autoBackup: checked }))
               }
             />

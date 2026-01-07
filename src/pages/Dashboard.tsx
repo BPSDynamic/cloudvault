@@ -13,13 +13,15 @@ import { FileMetadata, s3Service } from "@/lib/s3Service";
 import { lambdaService } from "@/lib/lambdaService";
 import { authService } from "@/lib/authService";
 import { dynamoService } from "@/lib/dynamoService";
-import { 
-  Upload, 
-  Search, 
-  Grid3X3, 
-  List, 
-  Download, 
-  Share2, 
+import { useLocation, Link } from "react-router-dom"; // Added useLocation and Link import
+import {
+  Cloud,
+  Upload,
+  Search,
+  Grid3X3,
+  List,
+  Download,
+  Share2,
   MoreHorizontal,
   FolderPlus,
   FolderOpen,
@@ -41,7 +43,13 @@ import {
   AlertTriangle,
   Shield,
   Eye,
-  EyeOff
+  EyeOff,
+  Clock,
+  PieChart,
+  Activity,
+  ArrowUpRight,
+  MoreVertical,
+  LogOut
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -110,6 +118,11 @@ export default function Dashboard() {
 
   const { toast } = useToast();
 
+  // Location based view logic
+  const location = useLocation();
+  const isOverview = location.pathname === '/dashboard';
+  const showHero = isOverview && currentFolder === 'Root';
+
   // Update upload folder when current folder changes
   useEffect(() => {
     setUploadFolder(currentFolder);
@@ -123,10 +136,10 @@ export default function Dashboard() {
         if (result.success && result.folders) {
           // Filter folders for current folder context
           const currentFolderId = currentFolder === 'Root' ? undefined : currentFolder;
-          const relevantFolders = result.folders.filter((folder: any) => 
+          const relevantFolders = result.folders.filter((folder: any) =>
             currentFolderId ? folder.parentId === currentFolderId : !folder.parentId
           );
-          
+
           const dynamoFolders: FileItem[] = relevantFolders.map((folder: any) => ({
             id: folder.id,
             name: folder.name,
@@ -142,7 +155,7 @@ export default function Dashboard() {
             allowedFileTypes: folder.allowedFileTypes || ['all'],
             s3FolderId: folder.id
           }));
-          
+
           setFiles(prev => {
             // Remove existing folders for current folder
             const filteredFiles = prev.filter(f => !(f.type === 'folder' && f.folder === currentFolder));
@@ -152,11 +165,11 @@ export default function Dashboard() {
                 .filter(f => f.type === 'folder' && f.folder === currentFolder)
                 .map(f => f.name)
             );
-            
-            const newUniqueFolders = dynamoFolders.filter(folder => 
+
+            const newUniqueFolders = dynamoFolders.filter(folder =>
               !existingFolderNames.has(folder.name)
             );
-            
+
             return [...filteredFiles, ...newUniqueFolders];
           });
         }
@@ -167,52 +180,6 @@ export default function Dashboard() {
 
     loadFoldersFromDynamoDB();
   }, [currentFolder]);
-
-  // Load folders from Lambda function
-  const loadFoldersFromLambda = async () => {
-    try {
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser) return;
-
-      const result = await lambdaService.getFolders(currentUser.email);
-      if (result.success && result.folders) {
-        const lambdaFolders: FileItem[] = result.folders.map((folder: any) => ({
-          id: folder.id,
-          name: folder.name,
-      type: "folder",
-          size: "0 files",
-          modified: new Date(folder.createdAt).toLocaleDateString(),
-      icon: Folder,
-          folder: currentFolder,
-          tags: [],
-          confidentiality: folder.confidentiality as const,
-          importance: folder.importance as const,
-          allowSharing: folder.allowSharing,
-          allowedFileTypes: folder.allowedFileTypes || ['all'],
-          s3FolderId: folder.id
-        }));
-
-        setFiles(prev => {
-          // Remove existing folders for current folder
-          const filteredFiles = prev.filter(f => !(f.type === 'folder' && f.folder === currentFolder));
-          // Add new folders, but check for duplicates by name and folder context
-          const existingFolderNames = new Set(
-            filteredFiles
-              .filter(f => f.type === 'folder' && f.folder === currentFolder)
-              .map(f => f.name)
-          );
-          
-          const newUniqueFolders = lambdaFolders.filter(folder => 
-            !existingFolderNames.has(folder.name)
-          );
-          
-          return [...filteredFiles, ...newUniqueFolders];
-        });
-      }
-    } catch (error) {
-      console.error('Failed to load folders from Lambda:', error);
-    }
-  };
 
   // Clean up any existing duplicates on component mount
   useEffect(() => {
@@ -241,16 +208,32 @@ export default function Dashboard() {
     return files.filter(file => file.type === 'folder' && file.folder === currentFolder);
   };
 
-  // Get all folders (for root view)
-  const getAllFolders = () => {
-    return files.filter(file => file.type === 'folder');
+  // Get recent files across all folders
+  const getRecentFiles = () => {
+    return files
+      .filter(file => file.type !== 'folder')
+      .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+      .slice(0, 5);
   };
 
-  // Available folders and tags - remove duplicates
-  const allFolderNames = getAllFolders().map(f => f.name);
-  const uniqueFolderNames = [...new Set(allFolderNames)]; // Remove duplicates
-  const availableFolders = ['Root', ...uniqueFolderNames];
-  const availableTags = ['business', 'personal', 'design', 'documents', 'media', 'presentation', 'archive', 'backup', 'photos', 'video', 'audio', 'text', 'proposal', 'assets', 'notes', 'music'];
+  // Get storage stats
+  const getStorageStats = () => {
+    const totalSize = 15; // GB (mock limit)
+    const usedSize = 2.4; // GB (mock usage)
+
+    // Calculate breakdown by type
+    const breakdown = {
+      image: 35,
+      video: 25,
+      document: 20,
+      other: 20
+    };
+
+    return { totalSize, usedSize, breakdown };
+  };
+
+  const storageStats = getStorageStats();
+
   const availableFileTypes = [
     { value: 'all', label: 'All Files', icon: File },
     { value: 'image', label: 'Images', icon: Image },
@@ -350,26 +333,6 @@ export default function Dashboard() {
     }
   };
 
-  const getConfidentialityIcon = (level: string) => {
-    switch (level) {
-      case 'public': return Eye;
-      case 'internal': return Shield;
-      case 'confidential': return Lock;
-      case 'restricted': return AlertTriangle;
-      default: return Eye;
-    }
-  };
-
-  const getImportanceIcon = (level: string) => {
-    switch (level) {
-      case 'low': return null;
-      case 'medium': return Star;
-      case 'high': return Star;
-      case 'critical': return AlertTriangle;
-      default: return null;
-    }
-  };
-
   // File operations
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
@@ -382,64 +345,29 @@ export default function Dashboard() {
     }
 
     try {
-      // Get current user for Lambda function
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser) {
-        toast({
-          title: "Error",
-          description: "Please sign in to create folders",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Create folder using Lambda function
-      const result = await lambdaService.createFolder({
-        userEmail: currentUser.email,
-        userId: currentUser.id,
-        folderName: newFolderName,
-        parentFolderId: currentFolder === 'Root' ? undefined : currentFolder,
+      // Create folder using DynamoDB service (mocked locally)
+      const result = await dynamoService.createFolder({
+        name: newFolderName,
+        parentId: currentFolder === 'Root' ? undefined : currentFolder,
         allowedFileTypes: selectedFolderFileTypes.length > 0 ? selectedFolderFileTypes : ['all'],
         confidentiality: 'internal',
         importance: 'medium',
         allowSharing: true,
       });
 
-      if (result.success && result.folderId) {
+      if (result.success && result.folder) {
         setNewFolderName('');
         setSelectedFolderFileTypes([]);
         setShowCreateFolder(false);
-        
-        // Track analytics
-        await lambdaService.trackEvent({
-          userId: currentUser.id,
-          userEmail: currentUser.email,
-          eventType: 'folder_create',
-          eventData: {
-            folderName: newFolderName,
-            folderId: result.folderId,
-          },
-        });
 
-        // Send notification
-        await lambdaService.sendNotification({
-          type: 'folder_created',
-          userId: currentUser.id,
-          userEmail: currentUser.email,
-          userName: `${currentUser.firstName} ${currentUser.lastName}`,
-          data: {
-            folderName: newFolderName,
-          },
-        });
-        
         // Refresh folders from DynamoDB
         const refreshResult = await dynamoService.getAllFolders();
         if (refreshResult.success && refreshResult.folders) {
           const currentFolderId = currentFolder === 'Root' ? undefined : currentFolder;
-          const relevantFolders = refreshResult.folders.filter((folder: any) => 
+          const relevantFolders = refreshResult.folders.filter((folder: any) =>
             currentFolderId ? folder.parentId === currentFolderId : !folder.parentId
           );
-          
+
           const dynamoFolders: FileItem[] = relevantFolders.map((folder: any) => ({
             id: folder.id,
             name: folder.name,
@@ -455,17 +383,17 @@ export default function Dashboard() {
             allowedFileTypes: folder.allowedFileTypes || ['all'],
             s3FolderId: folder.id
           }));
-          
+
           setFiles(prev => {
             const filteredFiles = prev.filter(f => !(f.type === 'folder' && f.folder === currentFolder));
             return [...filteredFiles, ...dynamoFolders];
           });
         }
-        
-        const fileTypesText = selectedFolderFileTypes.length > 0 
+
+        const fileTypesText = selectedFolderFileTypes.length > 0
           ? ` for ${selectedFolderFileTypes.join(', ')} files`
           : ' for all file types';
-        
+
         toast({
           title: "Folder created",
           description: `"${newFolderName}" folder has been created${fileTypesText}`,
@@ -496,7 +424,7 @@ export default function Dashboard() {
     if (selectedFiles.length === 0) return;
 
     setIsUploading(true);
-    
+
     try {
       // Upload files to S3
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -527,25 +455,25 @@ export default function Dashboard() {
           importance: uploadImportance,
           allowSharing: allowSharing,
           onProgress: (progress: any) => {
-            setFiles(prev => prev.map(f => 
+            setFiles(prev => prev.map(f =>
               f.id === newFile.id ? { ...f, uploadProgress: progress.percentage } : f
             ));
           },
         };
 
         const result = await s3Service.uploadFile(file, uploadOptions);
-        
+
         if (result.success) {
           // Mark upload as complete
-          setFiles(prev => prev.map(f => 
+          setFiles(prev => prev.map(f =>
             f.id === newFile.id ? { ...f, isUploading: false, uploadProgress: undefined } : f
           ));
         } else {
           // Mark upload as failed
-          setFiles(prev => prev.map(f => 
-            f.id === newFile.id ? { 
-              ...f, 
-              isUploading: false, 
+          setFiles(prev => prev.map(f =>
+            f.id === newFile.id ? {
+              ...f,
+              isUploading: false,
               uploadProgress: undefined,
               // You could add an error state here
             } : f
@@ -556,7 +484,7 @@ export default function Dashboard() {
       setIsUploading(false);
       setSelectedFiles([]);
       setShowUploadModal(false);
-      
+
       toast({
         title: "Upload complete",
         description: `${selectedFiles.length} file(s) uploaded successfully`,
@@ -580,16 +508,16 @@ export default function Dashboard() {
   };
 
   const handleTagToggle = (tag: string) => {
-    setUploadTags(prev => 
-      prev.includes(tag) 
+    setUploadTags(prev =>
+      prev.includes(tag)
         ? prev.filter(t => t !== tag)
         : [...prev, tag]
     );
   };
 
   const handleFolderFileTypeToggle = (fileType: string) => {
-    setSelectedFolderFileTypes(prev => 
-      prev.includes(fileType) 
+    setSelectedFolderFileTypes(prev =>
+      prev.includes(fileType)
         ? prev.filter(t => t !== fileType)
         : [...prev, fileType]
     );
@@ -601,7 +529,7 @@ export default function Dashboard() {
     if (currentFolder === folderName) {
       return;
     }
-    
+
     setCurrentFolder(folderName);
     setFolderPath(prev => [...prev, folderName]);
   };
@@ -612,737 +540,450 @@ export default function Dashboard() {
     setCurrentFolder(newPath[newPath.length - 1]);
   };
 
-  const handleBackToParent = () => {
-    if (folderPath.length > 1) {
-      const newPath = folderPath.slice(0, -1);
-      setFolderPath(newPath);
-      setCurrentFolder(newPath[newPath.length - 1]);
-    } else {
-      // Go back to Root
-      setFolderPath(['Root']);
-      setCurrentFolder('Root');
-    }
-  };
-
-  const handleS3UploadComplete = (uploadedFiles: FileMetadata[]) => {
-    toast({
-      title: "Files uploaded successfully!",
-      description: `${uploadedFiles.length} file(s) uploaded to S3`,
-    });
-    // Refresh the file list or update the UI as needed
-  };
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const files = Array.from(e.dataTransfer.files);
-    setSelectedFiles(files);
-    setShowUploadModal(true);
-  }, []);
-
   return (
-    <div className="flex flex-col space-y-6">
-      {/* Clean Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">My Files</h1>
-            {folderPath.length > 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleBackToParent}
-                className="h-6 px-2 text-xs"
-              >
-                ← Back
-              </Button>
-            )}
-            <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full">
-              <Folder className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium text-primary">
-                {currentFolder}
-              </span>
-            </div>
+    <div className="flex-1 space-y-4 p-8 pt-6 max-w-full overflow-hidden min-w-0">
+      {/* View Toggle Logic (Hidden in UI but logic remaining) */}
+      {showHero && (
+        <div className="flex flex-col gap-6">
+          {/* Folder Breadcrumb & Title for Overview */}
+          <div className="flex flex-col space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+              Dashboard
+            </h1>
+            <p className="text-muted-foreground">Welcome back to your secure cloud storage.</p>
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            {folderPath.map((folder, index) => (
-              <div key={index} className="flex items-center gap-2">
-                {index > 0 && (
-                  <span className="text-muted-foreground">/</span>
-                )}
-                <button
-                  onClick={() => handleBreadcrumbClick(index)}
-                  className={`px-2 py-1 rounded-md transition-all duration-200 ${
-                    index === folderPath.length - 1 
-                      ? 'bg-primary text-primary-foreground font-medium shadow-sm' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {folder}
-                </button>
-              </div>
-            ))}
-          </div>
-          <p className="text-sm text-muted-foreground">2.4 GB used of 15 GB storage</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 h-9">
-            <FolderPlus className="h-4 w-4" />
-            New Folder
-          </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader className="space-y-3">
-                <DialogTitle className="text-xl font-semibold">Create New Folder</DialogTitle>
-                <DialogDescription className="text-sm text-muted-foreground">
-                  Organize your files with a dedicated folder
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-6 py-4">
-                {/* Folder Name Section */}
-                <div className="space-y-2">
-                  <Label htmlFor="folder-name" className="text-sm font-medium">Folder Name</Label>
-                  <Input
-                    id="folder-name"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="e.g., Project Assets, Documents, Photos..."
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
-                    className="h-10"
-                  />
-                </div>
 
-                {/* File Types Section */}
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <Label className="text-sm font-medium">File Types</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Optional: Restrict this folder to specific file types
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-2">
-                    {availableFileTypes.map((fileType) => {
-                      const IconComponent = fileType.icon;
-                      const isSelected = selectedFolderFileTypes.includes(fileType.value);
-                      return (
-                        <Button
-                          key={fileType.value}
-                          variant={isSelected ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleFolderFileTypeToggle(fileType.value)}
-                          className={`h-16 p-2 flex flex-col items-center gap-1.5 transition-all duration-200 ${
-                            isSelected 
-                              ? 'bg-primary text-primary-foreground shadow-sm' 
-                              : 'hover:bg-muted/50 border-border/50'
-                          }`}
-                        >
-                          <IconComponent className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                          <span className={`text-xs font-medium leading-tight ${isSelected ? 'text-primary-foreground' : 'text-foreground'}`}>
-                            {fileType.label}
-                          </span>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                  
-                  {selectedFolderFileTypes.length > 0 && (
-                    <div className="mt-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 bg-primary rounded-full"></div>
-                        <p className="text-xs font-medium text-primary">
-                          {selectedFolderFileTypes.length} file type{selectedFolderFileTypes.length > 1 ? 's' : ''} selected
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {selectedFolderFileTypes.join(' • ')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <DialogFooter className="gap-2 pt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setShowCreateFolder(false);
-                    setNewFolderName('');
-                    setSelectedFolderFileTypes([]);
-                  }}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleCreateFolder}
-                  className="flex-1"
-                  disabled={!newFolderName.trim()}
-                >
-                  Create Folder
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Button 
-            size="sm" 
-            className="gap-2 h-9"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="h-4 w-4" />
-            Upload
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-        </div>
-      </div>
-
-      {/* Folder Navigation Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Folder Navigation Sidebar */}
-        <div className="lg:col-span-1">
-          <Card className="border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-medium">Folders</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <button
-                onClick={() => {
-                  setCurrentFolder('Root');
-                  setFolderPath(['Root']);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 ${
-                  currentFolder === 'Root' 
-                    ? 'bg-primary text-primary-foreground font-medium' 
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Folder className="h-4 w-4" />
-                  Root
-                </div>
-              </button>
-              {getCurrentFolderFolders().map((folder) => (
-                <div
-                  key={folder.id}
-                  className={`group relative w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 ${
-                    currentFolder === folder.name 
-                      ? 'bg-primary text-primary-foreground font-medium' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  <button
-                    onClick={() => handleFolderClick(folder.name)}
-                    onDoubleClick={() => handleFolderClick(folder.name)}
-                    className="flex items-center gap-2 w-full"
-                  >
-                    <Folder className="h-4 w-4" />
-                    <span className="flex-1 text-left truncate">{folder.name}</span>
-                    {folder.allowedFileTypes && !folder.allowedFileTypes.includes('all') && (
-                      <Badge variant="outline" className="text-xs">
-                        {folder.allowedFileTypes.length}
-                      </Badge>
-                    )}
-                  </button>
-                  
-                  {/* Folder Management Menu */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
-                      >
-                        <MoreHorizontal className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleFolderClick(folder.name)}>
-                        <FolderOpen className="h-4 w-4 mr-2" />
-                        Open Folder
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Share2 className="h-4 w-4 mr-2" />
-                        Share Folder
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-red-600"
-                        onClick={() => handleDelete(folder.name, folder.id, true)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Folder
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              ))}
-              
-              {/* Empty state for folders */}
-              {getCurrentFolderFolders().length === 0 && (
-                <div className="text-center py-4 text-muted-foreground">
-                  <Folder className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">No folders yet</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="lg:col-span-3 space-y-6">
-          {/* Clean Storage & Upload Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Storage Usage */}
-        <Card className="border-border/50">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-foreground">Storage</span>
-              <Badge variant="outline" className="text-xs">84% Free</Badge>
-            </div>
-            <Progress value={16} className="h-2 mb-2" />
-            <div className="flex justify-between text-xs text-muted-foreground">
-            <span>2.4 GB used</span>
-            <span>15 GB total</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Upload Zone */}
-        <Card className="lg:col-span-2 border-border/50">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-center h-full">
-              <UploadDialog
-                folderId={currentFolder === 'Root' ? undefined : currentFolder}
-                onUploadComplete={handleS3UploadComplete}
-                trigger={
-                  <div className="text-center space-y-3 cursor-pointer">
-                    <div className="p-3 rounded-full bg-primary/10 mx-auto w-fit">
-                      <Upload className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">Upload files to S3</p>
-                      <p className="text-xs text-muted-foreground">Click to open upload dialog</p>
-                    </div>
-                  </div>
-                }
-              />
-          </div>
-        </CardContent>
-      </Card>
-      </div>
-
-      {/* Clean Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 max-w-md">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search files..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 border-border/50 focus:border-primary/50"
-            />
-          </div>
-          <Button variant="outline" size="sm" className="h-10 px-3">
-            <Filter className="h-4 w-4 mr-2" />
-            Filter
-          </Button>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" className="h-10 px-3">
-            <SortDesc className="h-4 w-4 mr-2" />
-            Sort
-          </Button>
-          <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-lg">
-            <Button 
-              variant={viewMode === 'grid' ? 'default' : 'ghost'} 
-              size="sm"
-              onClick={() => setViewMode('grid')}
-              className="h-8 w-8 p-0"
-            >
-              <Grid3X3 className="h-4 w-4" />
-            </Button>
-            <Button 
-              variant={viewMode === 'list' ? 'default' : 'ghost'} 
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="h-8 w-8 p-0"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-
-          {/* S3 Files Manager */}
-          <FileManager
-            folderId={currentFolder === 'Root' ? undefined : currentFolder}
-            onFileDeleted={(fileId) => {
-              toast({
-                title: "File deleted",
-                description: "File has been removed from S3",
-              });
-            }}
-          />
-
-          {/* Root View - Show welcome message when no files */}
-          {currentFolder === 'Root' && getCurrentFolderFiles().length === 0 && (
-            <Card className="border-border/50">
-              <CardContent className="text-center py-12">
-                <Folder className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">Welcome to CloudVault</h3>
-                <p className="text-muted-foreground mb-4">
-                  Your files are organized in folders. Create a folder or upload files to get started.
-                </p>
-                <div className="flex gap-2 justify-center">
-                  <Button onClick={() => setShowCreateFolder(true)}>
-                    <FolderPlus className="h-4 w-4 mr-2" />
-                    Create Folder
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowUploadModal(true)}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Files
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Empty folder state */}
-          {currentFolder !== 'Root' && getCurrentFolderFiles().length === 0 && (
-            <Card className="border-border/50">
-              <CardContent className="text-center py-12">
-                <Folder className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">Empty Folder</h3>
-                <p className="text-muted-foreground mb-4">
-                  This folder is empty. Upload files to get started.
-                </p>
-                <Button onClick={() => setShowUploadModal(true)}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Files
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Files Section - Show when inside a folder or when there are files in root */}
-          {getCurrentFolderFiles().length > 0 && (
-            <Card className="border-border/50">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-semibold">
-                  {currentFolder === 'Root' ? 'Files' : `Files in ${currentFolder}`}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
+            {/* Storage Breakdown Card */}
+            <Card className="lg:col-span-2 shadow-sm border-border/50 bg-gradient-to-br from-card to-secondary/10">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PieChart className="h-5 w-5 text-primary" />
+                  Storage Overview
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {getCurrentFolderFiles().length} file{getCurrentFolderFiles().length !== 1 ? 's' : ''}
-                </p>
-        </CardHeader>
-        <CardContent>
-          {viewMode === 'grid' ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                    {getCurrentFolderFiles().map((file) => {
-                const IconComponent = getFileIcon(file.type);
-                return (
-                  <div
-                    key={file.id}
-                          className="group relative p-3 border rounded-lg hover:shadow-sm transition-all duration-200 cursor-pointer hover:border-primary/50"
-                  >
-                    <div className="flex flex-col items-center text-center space-y-2">
-                      <div className={`${getFileTypeColor(file.type)}`}>
-                              <IconComponent className="h-8 w-8" />
-                      </div>
-                      <div className="w-full">
-                              <p className="font-medium text-xs truncate" title={file.name}>
-                          {file.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{file.size}</p>
-                        <p className="text-xs text-muted-foreground">{file.modified}</p>
-                              <div className="flex items-center gap-1 mt-1">
-                                <Badge className={`text-xs px-1 py-0 ${getConfidentialityColor(file.confidentiality)}`}>
-                                  {file.confidentiality}
-                                </Badge>
-                                {file.importance !== 'low' && (
-                                  <Badge className={`text-xs px-1 py-0 ${getImportanceColor(file.importance)}`}>
-                                    {file.importance}
-                                  </Badge>
-                                )}
-                                {!file.allowSharing && (
-                                  <Lock className="h-3 w-3 text-red-500" />
-                                )}
-                              </div>
-                              {file.isUploading && (
-                                <div className="mt-1">
-                                  <Progress value={file.uploadProgress} className="h-1" />
-                                </div>
-                              )}
-                      </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <span className="text-3xl font-bold">{storageStats.usedSize} GB</span>
+                      <span className="text-muted-foreground ml-2">used of {storageStats.totalSize} GB</span>
                     </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
-                        >
-                                <MoreHorizontal className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Share2 className="h-4 w-4 mr-2" />
-                          Share
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                className="text-red-600"
-                                onClick={() => handleDelete(file.name)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Move to Trash
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
+                      Pro Plan
+                    </Badge>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-                  <div className="space-y-1">
-                    {getCurrentFolderFiles().map((file) => {
-                const IconComponent = getFileIcon(file.type);
-                return (
-                  <div
-                    key={file.id}
-                          className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={getFileTypeColor(file.type)}>
-                              <IconComponent className="h-4 w-4" />
-                      </div>
-                      <div>
-                              <p className="font-medium text-sm">{file.name}</p>
-                              <p className="text-xs text-muted-foreground">{file.modified}</p>
-                      </div>
-                    </div>
-                    
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-muted-foreground">{file.size}</span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                  <MoreHorizontal className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Share2 className="h-4 w-4 mr-2" />
-                            Share
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-red-600"
-                                  onClick={() => handleDelete(file.name)}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Move to Trash
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-          )}
-        </div>
-      </div>
 
-      {/* Upload Modal */}
-      <Dialog open={showUploadModal} onOpenChange={setShowUploadModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Upload Files</DialogTitle>
-            <DialogDescription>
-              Configure settings for your file upload.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Selected Files */}
-            <div>
-              <Label>Selected Files ({selectedFiles.length})</Label>
-              <div className="mt-2 space-y-2 max-h-32 overflow-y-auto">
-                {selectedFiles.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
+                  {/* Main Progress Bar */}
+                  <div className="h-4 w-full bg-secondary rounded-full overflow-hidden flex">
+                    <div style={{ width: `${storageStats.breakdown.image}%` }} className="h-full bg-blue-500" />
+                    <div style={{ width: `${storageStats.breakdown.video}%` }} className="h-full bg-purple-500" />
+                    <div style={{ width: `${storageStats.breakdown.document}%` }} className="h-full bg-orange-500" />
+                    <div style={{ width: `${storageStats.breakdown.other}%` }} className="h-full bg-gray-500" />
+                  </div>
+
+                  {/* Legend */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
                     <div className="flex items-center gap-2">
-                      <File className="h-4 w-4" />
-                      <span className="text-sm">{file.name}</span>
-                      <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">Images</span>
+                        <span className="text-xs text-muted-foreground">{storageStats.breakdown.image}%</span>
+                      </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-purple-500" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">Videos</span>
+                        <span className="text-xs text-muted-foreground">{storageStats.breakdown.video}%</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-orange-500" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">Docs</span>
+                        <span className="text-xs text-muted-foreground">{storageStats.breakdown.document}%</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-gray-500" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">Other</span>
+                        <span className="text-xs text-muted-foreground">{storageStats.breakdown.other}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions Card */}
+            <Card className="shadow-sm border-border/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-primary" />
+                  Quick Actions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-3">
+                <Button onClick={() => fileInputRef.current?.click()} className="w-full justify-start text-left h-auto py-3">
+                  <div className="bg-primary/10 p-2 rounded-full mr-3 text-primary">
+                    <Upload className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium">Upload File</div>
+                    <div className="text-xs font-normal opacity-80">Add new content</div>
+                  </div>
+                </Button>
+
+                <Button variant="outline" onClick={() => setShowCreateFolder(true)} className="w-full justify-start text-left h-auto py-3">
+                  <div className="bg-blue-500/10 p-2 rounded-full mr-3 text-blue-600">
+                    <FolderPlus className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium">New Folder</div>
+                    <div className="text-xs text-muted-foreground font-normal">Organize your files</div>
+                  </div>
+                </Button>
+
+                <Button variant="ghost" className="w-full justify-between text-muted-foreground hover:text-foreground">
+                  <span className="flex items-center gap-2">
+                    <Star className="h-4 w-4" />
+                    Starred Files
+                  </span>
+                  <ArrowUpRight className="h-3 w-3" />
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      <div className="space-y-4">
+        {/* Navigation & Controls - Conditionally Rendered or Adjusted */}
+        <div className="flex items-center justify-between border-b pb-4">
+          <div className="flex items-center justify-between w-full">
+            {!isOverview ? (
+              <>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  {folderPath.map((folder, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      {index > 0 && <span className="text-muted-foreground/40">/</span>}
+                      <button
+                        onClick={() => handleBreadcrumbClick(index)}
+                        className={`hover:text-primary transition-colors ${index === folderPath.length - 1
+                          ? 'font-medium text-foreground cursor-default pointer-events-none'
+                          : ''
+                          }`}
+                      >
+                        {folder}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                  {currentFolder}
+                </h1>
+              </>
+            ) : (
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-semibold">Folders</h2>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* View Toggle for Folders Section */}
+                  <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
                     <Button
-                      variant="ghost"
+                      variant={viewMode === 'grid' ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))}
+                      onClick={() => setViewMode('grid')}
+                      className="h-8 w-8 p-0"
                     >
-                      <X className="h-4 w-4" />
+                      <Grid3X3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'list' ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className="h-8 w-8 p-0"
+                    >
+                      <List className="h-4 w-4" />
                     </Button>
                   </div>
-                ))}
+
+                  <Link to="/dashboard/files" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+                    View All <ArrowUpRight className="h-4 w-4" />
+                  </Link>
+                </div>
               </div>
-            </div>
-
-            {/* Folder Selection */}
-            <div>
-              <Label htmlFor="upload-folder">Save to Folder</Label>
-              <Select value={uploadFolder} onValueChange={setUploadFolder}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select folder" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableFolders.map((folder) => (
-                    <SelectItem key={folder} value={folder}>
-                      {folder}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <Label>Tags</Label>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {availableTags.map((tag) => (
-                  <Button
-                    key={tag}
-                    variant={uploadTags.includes(tag) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => handleTagToggle(tag)}
-                    className="h-8"
-                  >
-                    {tag}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            {/* Confidentiality */}
-            <div>
-              <Label htmlFor="confidentiality">Confidentiality Level</Label>
-              <Select value={uploadConfidentiality} onValueChange={(value: any) => setUploadConfidentiality(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public">
-                    <div className="flex items-center gap-2">
-                      <Eye className="h-4 w-4" />
-                      Public
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="internal">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4" />
-                      Internal
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="confidential">
-                    <div className="flex items-center gap-2">
-                      <Lock className="h-4 w-4" />
-                      Confidential
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="restricted">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" />
-                      Restricted
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Importance */}
-            <div>
-              <Label htmlFor="importance">Importance Level</Label>
-              <Select value={uploadImportance} onValueChange={(value: any) => setUploadImportance(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4" />
-                      Medium
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="high">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4" />
-                      High
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="critical">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" />
-                      Critical
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Sharing Permission */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="allow-sharing"
-                checked={allowSharing}
-                onCheckedChange={(checked) => setAllowSharing(checked as boolean)}
-              />
-              <Label htmlFor="allow-sharing" className="flex items-center gap-2">
-                {allowSharing ? <Share2 className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                Allow sharing
-              </Label>
-            </div>
+            )}
           </div>
 
+          {!isOverview && (
+            <div className="flex items-center gap-3">
+              <div className="relative hidden md:block">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search files..."
+                  className="pl-9 w-[200px] bg-background/50 h-9 rounded-full"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
+                <Button
+                  variant={viewMode === 'grid' ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="h-8 w-8 p-0"
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="h-8 w-8 p-0"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Content Display */}
+        <div className="min-h-[300px]">
+          {/* Folders Section (Overview) */}
+          {isOverview && (
+            <div className="mb-8 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-full overflow-hidden">
+              {getCurrentFolderFolders().length > 0 ? (
+                viewMode === 'grid' ? (
+                  // Horizontal Scroll Grid View - Left aligned like list view
+                  <div className="flex overflow-x-auto pb-4 gap-4 snap-x scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40 scrollbar-track-transparent w-full">
+                    {getCurrentFolderFolders().map((folder) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => handleFolderClick(folder.name)}
+                        className="flex-none w-[160px] md:w-[200px] snap-start group relative border rounded-xl p-4 cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-all duration-200 flex flex-col items-start text-left gap-3 bg-card shadow-sm"
+                      >
+                        <Folder className="h-10 w-10 text-blue-500 fill-blue-500/20 group-hover:scale-110 transition-transform duration-300" />
+                        <div className="min-w-0 w-full">
+                          <p className="font-medium truncate text-sm">{folder.name}</p>
+                          <p className="text-xs text-muted-foreground">{folder.modified}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  // Vertical List View
+                  <div className="flex flex-col gap-2">
+                    {getCurrentFolderFolders().map((folder) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => handleFolderClick(folder.name)}
+                        className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors shadow-sm cursor-pointer group"
+                      >
+                        <Folder className="h-8 w-8 text-blue-500 fill-blue-500/20" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">{folder.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{folder.modified}</span>
+                            <span>•</span>
+                            <span>{folder.size || "0 items"}</span>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ArrowUpRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed rounded-xl">
+                  <div className="bg-muted/30 p-4 rounded-full mb-3">
+                    <FolderPlus className="h-8 w-8 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-muted-foreground text-sm mb-4">No folders yet</p>
+                  <Button variant="outline" size="sm" onClick={() => setShowCreateFolder(true)}>
+                    Create Folder
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Files & Folders (Only when NOT Overview) */}
+          {!isOverview && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+              {/* Folders List (if any) */}
+              {getCurrentFolderFolders().length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                    <Folder className="h-4 w-4" /> Folders
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {getCurrentFolderFolders().map((folder) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => handleFolderClick(folder.name)}
+                        className="group relative border rounded-xl p-4 cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-all duration-200 flex flex-col items-center text-center gap-3 aspect-square justify-center bg-card shadow-sm"
+                      >
+                        <Folder className="h-10 w-10 text-blue-500 fill-blue-500/20 group-hover:scale-110 transition-transform duration-300" />
+                        <div className="min-w-0 w-full">
+                          <p className="font-medium truncate text-sm">{folder.name}</p>
+                          <p className="text-xs text-muted-foreground">{folder.size || "Empty"}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Files List */}
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Files
+                </h3>
+                {getCurrentFolderFiles().length > 0 ? (
+                  viewMode === 'grid' ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                      {getCurrentFolderFiles().map((file) => {
+                        const Icon = file.icon;
+                        return (
+                          <Card key={file.id} className="group relative overflow-hidden transition-all hover:shadow-md hover:border-primary/50 cursor-pointer">
+                            <div className="p-4 flex flex-col items-center gap-3 text-center aspect-[4/5] justify-center">
+                              <div className={`p-3 rounded-xl bg-muted/50 ${getFileTypeColor(file.type)} group-hover:scale-110 transition-transform duration-300`}>
+                                <Icon className="h-8 w-8" />
+                              </div>
+                              <div className="min-w-0 w-full space-y-1">
+                                <p className="font-medium truncate text-sm">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">{file.size} • {file.modified}</p>
+                              </div>
+                            </div>
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem>
+                                    <Download className="mr-2 h-4 w-4" /> Download
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem>
+                                    <Share2 className="mr-2 h-4 w-4" /> Share
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {getCurrentFolderFiles().map((file) => {
+                        const Icon = file.icon;
+                        return (
+                          <div key={file.id} className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors shadow-sm group">
+                            <div className={`p-2 rounded-lg bg-muted/50 ${getFileTypeColor(file.type)}`}>
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
+                              <div className="col-span-6 md:col-span-4">
+                                <p className="font-medium truncate text-sm">{file.name}</p>
+                              </div>
+                              <div className="col-span-3 hidden md:block text-sm text-muted-foreground">
+                                {file.modified}
+                              </div>
+                              <div className="col-span-3 hidden md:block text-sm text-muted-foreground">
+                                {file.size}
+                              </div>
+                            </div>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem>
+                                    <Download className="mr-2 h-4 w-4" /> Download
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem>
+                                    <Share2 className="mr-2 h-4 w-4" /> Share
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  getCurrentFolderFolders().length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed rounded-xl">
+                      <div className="bg-muted/30 p-4 rounded-full mb-3">
+                        <Upload className="h-8 w-8 text-muted-foreground/50" />
+                      </div>
+                      <p className="text-muted-foreground text-sm mb-4">This folder is empty</p>
+                      <Button onClick={() => fileInputRef.current?.click()} variant="outline" size="sm">
+                        Upload File
+                      </Button>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        multiple
+        onChange={handleFileSelect}
+      />
+
+      {/* Dialogs */}
+      <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Folder</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Folder Name</Label>
+              <Input
+                id="name"
+                placeholder="e.g. Projects"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+              />
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUploadModal(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpload} disabled={isUploading || selectedFiles.length === 0}>
-              {isUploading ? "Uploading..." : `Upload ${selectedFiles.length} file(s)`}
-            </Button>
+            <Button variant="outline" onClick={() => setShowCreateFolder(false)}>Cancel</Button>
+            <Button onClick={handleCreateFolder}>Create Folder</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
